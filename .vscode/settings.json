@@ -1,0 +1,7 @@
+// configure extensions
+{
+    "sqltools.format": {
+        "language": "postgresql",
+        "linesBetweenQueries": 3,
+    },
+}

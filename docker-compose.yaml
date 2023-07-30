@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14.8-bookworm
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
+    networks:
+      - db
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "fediverse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  schema:
+    image: arigaio/atlas:latest
+    command: >
+      schema apply
+      --url postgres://fediverse:fediverse@postgres:5432/fediverse?sslmode=disable 
+      --dev-url postgres://fediverse:fediverse@postgres:5432/fediversedev?sslmode=disable
+      -f /migrations/schema.sql
+      --auto-approve
+    networks:
+      - db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/:/migrations:ro
+
+  migrate:
+    image: arigaio/atlas:latest
+    command: >
+      migrate apply
+      --url postgres://fediverse:fediverse@postgres:5432/fediverse?sslmode=disable
+      --allow-dirty
+    networks:
+      - db
+    depends_on:
+      schema:
+        condition: service_completed_successfully
+    volumes:
+      - ./db/migrations:/migrations:ro
+
+networks:
+  db:
