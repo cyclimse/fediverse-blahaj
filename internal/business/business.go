@@ -8,6 +8,7 @@ import (
 	"github.com/cyclimse/fediverse-blahaj/internal/db"
 	"github.com/cyclimse/fediverse-blahaj/internal/models"
 	"github.com/cyclimse/fediverse-blahaj/internal/utils"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -115,4 +116,62 @@ func (b *Business) AddCrawlToServer(ctx context.Context, res models.FediverseSer
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (b *Business) GetServerByID(ctx context.Context, id uuid.UUID) (*models.FediverseServer, error) {
+	row, err := b.queries.GetServerWithLastCrawlByID(ctx, pgtype.UUID{Bytes: id, Valid: true})
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrServerNotFound
+		}
+		return nil, err
+	}
+	return &models.FediverseServer{
+		ID:     row.ID.Bytes,
+		Domain: row.Domain,
+
+		Peers:         nil,
+		NumberOfPeers: row.NumberOfPeers,
+
+		SoftwareName: row.SoftwareName.String,
+
+		OpenRegistrations: row.OpenRegistrations,
+		TotalUsers:        utils.IntValToPtr(row.TotalUsers.Int32, row.TotalUsers.Valid),
+		ActiveHalfyear:    utils.IntValToPtr(row.ActiveHalfYear.Int32, row.ActiveHalfYear.Valid),
+		ActiveMonth:       utils.IntValToPtr(row.ActiveMonth.Int32, row.ActiveMonth.Valid),
+		LocalPosts:        utils.IntValToPtr(row.LocalPosts.Int32, row.LocalPosts.Valid),
+		LocalComments:     utils.IntValToPtr(row.LocalComments.Int32, row.LocalComments.Valid),
+	}, nil
+}
+
+func (b *Business) ListServers(ctx context.Context, page, pageSize int32) ([]models.FediverseServer, error) {
+	res, err := b.queries.ListSeversPaginated(ctx, db.ListSeversPaginatedParams{
+		Limit:  pageSize,
+		Offset: (page - 1) * pageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	servers := make([]models.FediverseServer, len(res))
+	for i := range res {
+		servers[i] = models.FediverseServer{
+			ID:     res[i].ID.Bytes,
+			Domain: res[i].Domain,
+
+			Peers:         nil,
+			NumberOfPeers: res[i].NumberOfPeers,
+
+			SoftwareName: res[i].SoftwareName.String,
+
+			OpenRegistrations: res[i].OpenRegistrations,
+			TotalUsers:        utils.IntValToPtr(res[i].TotalUsers.Int32, res[i].TotalUsers.Valid),
+			ActiveHalfyear:    utils.IntValToPtr(res[i].ActiveHalfYear.Int32, res[i].ActiveHalfYear.Valid),
+			ActiveMonth:       utils.IntValToPtr(res[i].ActiveMonth.Int32, res[i].ActiveMonth.Valid),
+			LocalPosts:        utils.IntValToPtr(res[i].LocalPosts.Int32, res[i].LocalPosts.Valid),
+			LocalComments:     utils.IntValToPtr(res[i].LocalComments.Int32, res[i].LocalComments.Valid),
+		}
+	}
+
+	return servers, nil
 }

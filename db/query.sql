@@ -5,10 +5,21 @@ WHERE domain = $1
 LIMIT 1;
 
 
+-- name: GetServerWithLastCrawlByID :one
+SELECT *
+FROM servers
+  JOIN crawls ON crawls.id = servers.last_crawl_id
+WHERE servers.id = $1
+  AND servers.deleted_at IS NULL
+LIMIT 1;
+
+
 -- name: ListSeversPaginated :many
 SELECT *
 FROM servers
-ORDER BY id
+  JOIN crawls ON crawls.id = servers.last_crawl_id
+WHERE servers.deleted_at IS NULL
+ORDER BY servers.created_at DESC
 LIMIT $1 OFFSET $2;
 
 

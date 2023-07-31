@@ -10,3 +10,10 @@ func IntPtrToVal[T constraints.Integer](ptr *T) T {
 	}
 	return *ptr
 }
+
+func IntValToPtr[T constraints.Integer](val T, valid bool) *T {
+	if !valid {
+		return nil
+	}
+	return &val
+}

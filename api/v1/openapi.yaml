@@ -1,0 +1,263 @@
+openapi: "3.1.0"
+info:
+  version: 0.1.0
+  title: Swagger Petstore
+  description: A sample API that uses a petstore as an example to demonstrate features in the OpenAPI 3.0 specification
+  termsOfService: http://swagger.io/terms/
+  contact:
+    name: Swagger API Team
+    email: apiteam@swagger.io
+    url: http://swagger.io
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+- url: https://petstore.swagger.io/v2
+paths:
+  /servers:
+    get:
+      summary: List all servers
+      operationId: listServers
+      parameters:
+      - name: software
+        in: query
+        description: filter by software name.
+        example: "mastodon"
+        required: false
+        style: form
+        schema:
+          type: string
+      - name: page
+        in: query
+        description: page number of results to return
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: per_page
+        in: query
+        description: number of results to return per page
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: paginated array of servers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Server'
+                  total:
+                    type: integer
+                    format: int32
+                  page:
+                    type: integer
+                    format: int32
+                    minimum: 1
+                    default: 1
+                  per_page:
+                    type: integer
+                    format: int32
+                    minimum: 1
+                    maximum: 100
+                    default: 30
+
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /servers/{id}:
+    get:
+      summary: Info for a specific server
+      operationId: getServerByID
+      parameters:
+      - name: id
+        in: path
+        description: ID of the server to fetch
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: server response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /servers/{id}/crawls:
+    get:
+      summary: List all crawls for a server
+      operationId: listCrawlsForServer
+      parameters:
+      - name: id
+        in: path
+        description: ID of the server to fetch
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: page number of results to return
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: per_page
+        in: query
+        description: number of results to return per page
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: paginated array of crawls
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Crawl'
+                  total:
+                    type: integer
+                    format: int32
+                  page:
+                    type: integer
+                    format: int32
+                    minimum: 1
+                    default: 1
+                  per_page:
+                    type: integer
+                    format: int32
+                    minimum: 1
+                    maximum: 100
+                    default: 30
+
+        default:
+          description: unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+
+    Server:
+      type: object
+      required:
+      - id
+      - domain
+      - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        domain:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, unknown]
+        description:
+          type: string
+        software:
+          type: string
+        version:
+          type: string
+        number_of_peers:
+          type: integer
+          format: int32
+        open_registrations:
+          type: boolean
+        total_users:
+          type: integer
+          format: int32
+        active_users_half_year:
+          type: integer
+          format: int32
+        active_users_month:
+          type: integer
+          format: int32
+        local_posts:
+          type: integer
+          format: int32
+        local_comments:
+          type: integer
+          format: int32
+
+    Crawl:
+      type: object
+      required:
+      - id
+      - server_id
+      - started_at
+      - finished_at
+      - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        server_id:
+          type: string
+          format: uuid
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, running, finished, failed]
+        error:
+          type: string
+        number_of_peers:
+          type: integer
+          format: int32
+        total_users:
+          type: integer
+          format: int32
+        active_users_half_year:
+          type: integer
+          format: int32
+        active_users_month:
+          type: integer
+          format: int32
+        local_posts:
+          type: integer
+          format: int32
+        local_comments:
+          type: integer
+          format: int32
+
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string

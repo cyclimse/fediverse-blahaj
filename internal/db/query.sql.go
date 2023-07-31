@@ -112,6 +112,62 @@ func (q *Queries) DeleteServerByID(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const getServerWithLastCrawlByID = `-- name: GetServerWithLastCrawlByID :one
+SELECT servers.id, domain, status, servers.created_at, deleted_at, updated_at, software_name, last_crawl_id, crawls.id, server_id, crawls.created_at, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
+FROM servers
+  JOIN crawls ON crawls.id = servers.last_crawl_id
+WHERE servers.id = $1
+  AND servers.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetServerWithLastCrawlByIDRow struct {
+	ID                pgtype.UUID
+	Domain            string
+	Status            ServerStatus
+	CreatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	SoftwareName      pgtype.Text
+	LastCrawlID       pgtype.UUID
+	ID_2              pgtype.UUID
+	ServerID          pgtype.UUID
+	CreatedAt_2       pgtype.Timestamptz
+	NumberOfPeers     int32
+	OpenRegistrations bool
+	TotalUsers        pgtype.Int4
+	ActiveHalfYear    pgtype.Int4
+	ActiveMonth       pgtype.Int4
+	LocalPosts        pgtype.Int4
+	LocalComments     pgtype.Int4
+}
+
+func (q *Queries) GetServerWithLastCrawlByID(ctx context.Context, id pgtype.UUID) (GetServerWithLastCrawlByIDRow, error) {
+	row := q.db.QueryRow(ctx, getServerWithLastCrawlByID, id)
+	var i GetServerWithLastCrawlByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.Status,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.UpdatedAt,
+		&i.SoftwareName,
+		&i.LastCrawlID,
+		&i.ID_2,
+		&i.ServerID,
+		&i.CreatedAt_2,
+		&i.NumberOfPeers,
+		&i.OpenRegistrations,
+		&i.TotalUsers,
+		&i.ActiveHalfYear,
+		&i.ActiveMonth,
+		&i.LocalPosts,
+		&i.LocalComments,
+	)
+	return i, err
+}
+
 const getSeverByDomain = `-- name: GetSeverByDomain :one
 SELECT id, domain, status, created_at, deleted_at, updated_at, software_name, last_crawl_id
 FROM servers
@@ -136,9 +192,11 @@ func (q *Queries) GetSeverByDomain(ctx context.Context, domain string) (Server, 
 }
 
 const listSeversPaginated = `-- name: ListSeversPaginated :many
-SELECT id, domain, status, created_at, deleted_at, updated_at, software_name, last_crawl_id
+SELECT servers.id, domain, status, servers.created_at, deleted_at, updated_at, software_name, last_crawl_id, crawls.id, server_id, crawls.created_at, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
 FROM servers
-ORDER BY id
+  JOIN crawls ON crawls.id = servers.last_crawl_id
+WHERE servers.deleted_at IS NULL
+ORDER BY servers.created_at DESC
 LIMIT $1 OFFSET $2
 `
 
@@ -147,15 +205,36 @@ type ListSeversPaginatedParams struct {
 	Offset int32
 }
 
-func (q *Queries) ListSeversPaginated(ctx context.Context, arg ListSeversPaginatedParams) ([]Server, error) {
+type ListSeversPaginatedRow struct {
+	ID                pgtype.UUID
+	Domain            string
+	Status            ServerStatus
+	CreatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	SoftwareName      pgtype.Text
+	LastCrawlID       pgtype.UUID
+	ID_2              pgtype.UUID
+	ServerID          pgtype.UUID
+	CreatedAt_2       pgtype.Timestamptz
+	NumberOfPeers     int32
+	OpenRegistrations bool
+	TotalUsers        pgtype.Int4
+	ActiveHalfYear    pgtype.Int4
+	ActiveMonth       pgtype.Int4
+	LocalPosts        pgtype.Int4
+	LocalComments     pgtype.Int4
+}
+
+func (q *Queries) ListSeversPaginated(ctx context.Context, arg ListSeversPaginatedParams) ([]ListSeversPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSeversPaginated, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Server
+	var items []ListSeversPaginatedRow
 	for rows.Next() {
-		var i Server
+		var i ListSeversPaginatedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Domain,
@@ -165,6 +244,16 @@ func (q *Queries) ListSeversPaginated(ctx context.Context, arg ListSeversPaginat
 			&i.UpdatedAt,
 			&i.SoftwareName,
 			&i.LastCrawlID,
+			&i.ID_2,
+			&i.ServerID,
+			&i.CreatedAt_2,
+			&i.NumberOfPeers,
+			&i.OpenRegistrations,
+			&i.TotalUsers,
+			&i.ActiveHalfYear,
+			&i.ActiveMonth,
+			&i.LocalPosts,
+			&i.LocalComments,
 		); err != nil {
 			return nil, err
 		}

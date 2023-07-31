@@ -6,34 +6,44 @@ package models
 
 import (
 	nodeinfo "github.com/cyclimse/fediverse-blahaj/pkg/nodeinfo/unversioned"
+	"github.com/google/uuid"
+	"golang.org/x/exp/constraints"
 )
+
+func convertPtrToInt32[T constraints.Integer](i *T) *int32 {
+	if i == nil {
+		return nil
+	}
+	v := int32(*i)
+	return &v
+}
 
 func ServerFromNodeInfo(domain string, peers []string, n nodeinfo.Nodeinfo) FediverseServer {
 	return FediverseServer{
+		ID:                uuid.UUID{}, // when inserting into the db, the id is generated
 		Domain:            domain,
 		Peers:             peers,
+		NumberOfPeers:     int32(len(peers)),
 		SoftwareName:      n.GetSoftwareName(),
 		OpenRegistrations: n.IsRegistrationOpen(),
-		TotalUsers:        n.TotalUsers(),
-		ActiveHalfyear:    n.ActiveUsersHalfyear(),
-		ActiveMonth:       n.ActiveUsersMonth(),
-		LocalPosts:        n.LocalPosts(),
-		LocalComments:     n.LocalComments(),
+		TotalUsers:        convertPtrToInt32(n.TotalUsers()),
+		ActiveHalfyear:    convertPtrToInt32(n.ActiveUsersHalfyear()),
+		ActiveMonth:       convertPtrToInt32(n.ActiveUsersMonth()),
+		LocalPosts:        convertPtrToInt32(n.LocalPosts()),
+		LocalComments:     convertPtrToInt32(n.LocalComments()),
 	}
 }
 
 type FediverseServer struct {
+	ID     uuid.UUID
 	Domain string
-	Peers  []string
+
+	Peers         []string
+	NumberOfPeers int32
 
 	SoftwareName string
 
-	OpenRegistrations bool
-	TotalUsers        *int
-	ActiveHalfyear    *int
-	ActiveMonth       *int
-	LocalPosts        *int
-	LocalComments     *int
+	
 }
 
 func (s FediverseServer) String() string {
