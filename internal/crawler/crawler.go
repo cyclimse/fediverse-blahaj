@@ -29,6 +29,20 @@ type Crawler struct {
 	userAgent string
 }
 
+type CrawlResult struct {
+	Domain   string
+	Peers    []string
+	Nodeinfo nodeinfo.Nodeinfo
+	Err      CrawlError
+}
+
+func newResultFromError(domain string, err CrawlError) CrawlResult {
+	return CrawlResult{
+		Domain: domain,
+		Err:    err,
+	}
+}
+
 func (c *Crawler) Crawl(ctx context.Context, domain string) CrawlResult {
 	slog.InfoCtx(ctx, "crawling", "domain", domain)
 
@@ -37,7 +51,12 @@ func (c *Crawler) Crawl(ctx context.Context, domain string) CrawlResult {
 
 	_, err := net.LookupIP(domain)
 	if err != nil {
-		return resultFromError(domain, fmt.Errorf("failed to lookup domain: %w", err))
+		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = errCrawlTimeout
+		} else {
+			err = errDomainLookupFailed.Wrap(err)
+		}
+		return newResultFromError(domain, err.(CrawlError))
 	}
 
 	// do not retry for the first request
@@ -54,14 +73,19 @@ func (c *Crawler) Crawl(ctx context.Context, domain string) CrawlResult {
 				// will use http instead
 				continue
 			}
-			// if the port is not open, we will get a connection refused error
-			slog.ErrorCtx(ctx, "failed to acknowledge robots.txt", "error", err)
+			if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
+				return newResultFromError(domain, errCrawlTimeout)
+			}
 		}
 		if !canProceed {
-			return resultFromError(domain, fmt.Errorf("robots.txt disallows crawling"))
+			return newResultFromError(domain, errRobotsTxtDisallowsCrawling)
 		} else {
 			break
 		}
+	}
+	if err != nil {
+		// an error occurred, but we can proceed as if the robots.txt allowed crawling
+		slog.ErrorCtx(ctx, "failed to acknowledge robots.txt", "error", err)
 	}
 
 	// retry for the rest of the requests
@@ -69,18 +93,24 @@ func (c *Crawler) Crawl(ctx context.Context, domain string) CrawlResult {
 
 	nodeInfo, err := c.getNodeInfo(ctx, url)
 	if err != nil {
-		return resultFromError(domain, fmt.Errorf("failed to get nodeinfo: %w", err))
+		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = errCrawlTimeout
+		}
+		return newResultFromError(domain, err.(CrawlError))
 	}
 
 	peers, err := c.GetPeers(ctx, url, nodeInfo)
 	if err != nil {
-		return resultFromError(domain, fmt.Errorf("failed to get peers: %w", err))
+		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = errCrawlTimeout
+		}
+		return newResultFromError(domain, err.(CrawlError))
 	}
 
 	return CrawlResult{
 		Domain:   domain,
 		Peers:    peers,
-		NodeInfo: nodeInfo,
+		Nodeinfo: nodeInfo,
 	}
 }
 
@@ -97,17 +127,17 @@ func (c *Crawler) acknowledgeRobotsTxt(ctx context.Context, url string) (bool, e
 	c.client.RetryMax = 0
 	resp, err := c.client.Do(r.WithContext(ctx))
 	if err != nil {
-		return true, fmt.Errorf("failed to get robots.txt: %w", err)
+		return true, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return true, fmt.Errorf("failed to get robots.txt, status code: %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return true, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	robots, err := robotstxt.FromResponse(resp)
 	if err != nil {
-		return true, fmt.Errorf("failed to parse robots.txt: %w", err)
+		return true, newCrawlInternalError(err)
 	}
 
 	group := robots.FindGroup(c.userAgent)
@@ -120,10 +150,10 @@ func (c *Crawler) acknowledgeRobotsTxt(ctx context.Context, url string) (bool, e
 	return canProceed, nil
 }
 
-func (c *Crawler) getNodeInfo(ctx context.Context, url string) (nodeinfo.Nodeinfo, error) {
+func (c *Crawler) getNodeInfo(ctx context.Context, url string) (nodeinfo.Nodeinfo, CrawlError) {
 	r, err := retryablehttp.NewRequest("GET", url+"/.well-known/nodeinfo", nil)
 	if err != nil {
-		return nil, err
+		return nil, newCrawlInternalError(err)
 	}
 
 	r.Header.Set("Accept", "application/json")
@@ -131,32 +161,32 @@ func (c *Crawler) getNodeInfo(ctx context.Context, url string) (nodeinfo.Nodeinf
 
 	resp, err := c.client.Do(r.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("getting well-known: %w", err)
+		return nil, errNetworkError.Wrap(err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("getting well-known, status code: %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, errNetworkError.Wrap(fmt.Errorf("unexpected status code: %d", resp.StatusCode))
 	}
 
 	var w nodeinfo.WellKnown
 	err = json.NewDecoder(resp.Body).Decode(&w)
 	if err != nil {
-		return nil, fmt.Errorf("decoding well-known: %w", err)
+		return nil, errNodeInfoSyntax.Wrap(err)
 	}
 
 	if len(w.Links) == 0 {
-		return nil, fmt.Errorf("no nodeinfo link found")
+		return nil, errNodeInfoSyntax.Wrap(fmt.Errorf("no links in nodeinfo"))
 	}
 
 	link, nodeInfo, err := nodeinfo.HighestSupported(w)
 	if err != nil {
-		return nil, fmt.Errorf("finding highest supported nodeinfo version: %w", err)
+		return nil, errNodeInfoSyntax.Wrap(err)
 	}
 
 	r, err = retryablehttp.NewRequest("GET", link, nil)
 	if err != nil {
-		return nil, err
+		return nil, newCrawlInternalError(err)
 	}
 
 	r.Header.Set("Accept", "application/json")
@@ -164,23 +194,23 @@ func (c *Crawler) getNodeInfo(ctx context.Context, url string) (nodeinfo.Nodeinf
 
 	resp, err = c.client.Do(r.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("getting nodeinfo: %w", err)
+		return nil, errNetworkError.Wrap(err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("getting nodeinfo, status code: %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, errNetworkError.Wrap(fmt.Errorf("unexpected status code: %d", resp.StatusCode))
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading nodeinfo: %w", err)
+		return nil, newCrawlInternalError(err)
 	}
 
 	err = json.Unmarshal(b, &nodeInfo)
 	if err != nil {
 		slog.ErrorCtx(ctx, "failed to decode nodeinfo", "error", err, "body", b)
-		return nil, fmt.Errorf("decoding nodeinfo: %w", err)
+		return nil, errNodeInfoSyntax.Wrap(err)
 	}
 
 	return nodeInfo, nil

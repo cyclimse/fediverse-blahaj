@@ -18,32 +18,50 @@ func convertPtrToInt32[T constraints.Integer](i *T) *int32 {
 	return &v
 }
 
-func ServerFromNodeInfo(domain string, peers []string, n nodeinfo.Nodeinfo) FediverseServer {
-	return FediverseServer{
-		ID:                uuid.UUID{}, // when inserting into the db, the id is generated
-		Domain:            domain,
-		Peers:             peers,
-		NumberOfPeers:     int32(len(peers)),
-		SoftwareName:      n.GetSoftwareName(),
-		OpenRegistrations: n.IsRegistrationOpen(),
-		TotalUsers:        convertPtrToInt32(n.TotalUsers()),
-		ActiveHalfyear:    convertPtrToInt32(n.ActiveUsersHalfyear()),
-		ActiveMonth:       convertPtrToInt32(n.ActiveUsersMonth()),
-		LocalPosts:        convertPtrToInt32(n.LocalPosts()),
-		LocalComments:     convertPtrToInt32(n.LocalComments()),
+func ServerFromCrawlResult(domain string, n nodeinfo.Nodeinfo, peers []string, err error, status string) FediverseServer {
+	srv := FediverseServer{
+		Domain:      domain,
+		CrawlErr:    err,
+		CrawlStatus: status,
+
+		Peers: peers,
 	}
+	if peers != nil {
+		*srv.NumberOfPeers = int32(len(peers))
+	}
+
+	if n != nil {
+		*srv.SoftwareName = n.GetSoftwareName()
+		*srv.OpenRegistrations = n.IsRegistrationOpen()
+		srv.TotalUsers = convertPtrToInt32(n.TotalUsers())
+		srv.ActiveHalfyear = convertPtrToInt32(n.ActiveUsersHalfyear())
+		srv.ActiveMonth = convertPtrToInt32(n.ActiveUsersMonth())
+		srv.LocalPosts = convertPtrToInt32(n.LocalPosts())
+		srv.LocalComments = convertPtrToInt32(n.LocalComments())
+	}
+
+	return srv
 }
 
 type FediverseServer struct {
 	ID     uuid.UUID
 	Domain string
 
+	CrawlErr    error
+	CrawlStatus string
+
 	Peers         []string
-	NumberOfPeers int32
+	NumberOfPeers *int32
 
-	SoftwareName string
+	SoftwareName *string
 
-	
+	// depending on the nodeinfo version, these fields may be nil
+	OpenRegistrations *bool
+	TotalUsers        *int32
+	ActiveHalfyear    *int32
+	ActiveMonth       *int32
+	LocalPosts        *int32
+	LocalComments     *int32
 }
 
 func (s FediverseServer) String() string {

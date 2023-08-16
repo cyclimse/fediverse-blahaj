@@ -1,0 +1,26 @@
+{
+  "name": "www",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "generate": "openapi --input ../api/v1/openapi.yaml --output ./src/api/generated --name FedClient",
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "bulma": "^0.9.4",
+    "pinia": "^2.1.6",
+    "sass": "^1.65.1",
+    "vue": "^3.3.4",
+    "vue-router": "4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.3",
+    "openapi-typescript-codegen": "^0.25.0",
+    "typescript": "^5.0.2",
+    "vite": "^4.4.5",
+    "vue-tsc": "^1.8.5"
+  }
+}

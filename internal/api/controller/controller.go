@@ -9,6 +9,7 @@ import (
 	openapi_types "github.com/deepmap/oapi-codegen/pkg/types"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/exp/slog"
 )
 
 func NewAPIController(business *business.Business) v1.ServerInterface {
@@ -40,26 +41,30 @@ func (c *APIController) GetServerByID(ctx echo.Context, id uuid.UUID) error {
 func (c *APIController) ListServers(ctx echo.Context, params v1.ListServersParams) error {
 	page, pageSize := validatePage(params.Page), validatePageSize(params.PerPage)
 
-	servers, err := c.Business.ListServers(ctx.Request().Context(), page, pageSize)
+	servers, total, err := c.Business.ListServers(ctx.Request().Context(), page, pageSize)
 	if err != nil {
+		slog.ErrorCtx(ctx.Request().Context(), "failed to list servers", "error", err)
 		return err
 	}
 
-	var resp v1.ListServers200JSONResponse
-	var results []v1.Server
-	resp.Results = &results
+	var resp = v1.ListServers200JSONResponse{
+		Results: make([]v1.Server, len(servers)),
+		Page:    page,
+		PerPage: pageSize,
+		Total:   total,
+	}
 
 	for i, s := range servers {
-		results[i] = v1.Server{
+		resp.Results[i] = v1.Server{
 			Id:     openapi_types.UUID(s.ID),
 			Domain: s.Domain,
 
 			Description: nil,
 			Software:    nil,
 
-			NumberOfPeers: &s.NumberOfPeers,
+			NumberOfPeers: s.NumberOfPeers,
 
-			OpenRegistrations:   &s.OpenRegistrations,
+			OpenRegistrations:   s.OpenRegistrations,
 			TotalUsers:          s.TotalUsers,
 			ActiveUsersHalfYear: s.ActiveHalfyear,
 			ActiveUsersMonth:    s.ActiveMonth,
@@ -68,7 +73,7 @@ func (c *APIController) ListServers(ctx echo.Context, params v1.ListServersParam
 		}
 	}
 
-	return ctx.JSON(http.StatusOK, servers)
+	return ctx.JSON(http.StatusOK, resp)
 }
 
 // ListCrawlsForServer implements v1.ServerInterface

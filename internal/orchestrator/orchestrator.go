@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/cyclimse/fediverse-blahaj/internal/crawler"
@@ -14,20 +15,25 @@ const (
 	startingCrawlCapacity = 100
 )
 
-func New() *Orchestrator {
+func New(blockedDomains []string) *Orchestrator {
 	return &Orchestrator{
-		numCrawlers:   2,
-		seedDomain:    "mastodon.social",
-		domainCrawled: make(map[string]struct{}),
-		crawlTimeout:  5 * time.Second,
+		numCrawlers:    2,
+		seedDomain:     "mastodon.social",
+		crawledDomains: make(map[string]struct{}),
+		blockedDomains: blockedDomains,
+		crawlTimeout:   10 * time.Second,
 	}
 }
 
 type Orchestrator struct {
-	numCrawlers   int
-	seedDomain    string
-	domainCrawled map[string]struct{}
-	crawlTimeout  time.Duration
+	numCrawlers    int
+	seedDomain     string
+	crawledDomains map[string]struct{}
+	// unlike crawledDomains, this is a list because we also need to match subdomains
+	// e.g blocking ngrok.io should also block a.ngrok.io
+	// TODO: maybe use a trie for this
+	blockedDomains []string
+	crawlTimeout   time.Duration
 }
 
 // crawlerIdKey is the key for the crawler id in the context.
@@ -77,16 +83,17 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseS
 			case <-ctx.Done():
 				return ctx.Err()
 			case res := <-processed:
+				status := "completed"
 				if res.Err != nil {
 					slog.ErrorCtx(ctx, "failed to crawl", "error", res.Err)
-					continue
+					status = string(res.Err.Status())
 				}
-
 				// send the peer to the results channel
-				results <- models.ServerFromNodeInfo(res.Domain, res.Peers, res.NodeInfo)
+				results <- models.ServerFromCrawlResult(res.Domain, res.Nodeinfo, res.Peers, res.Err, status)
 
 				// mark the peer as crawled
-				o.domainCrawled[res.Domain] = struct{}{}
+				// TODO: maybe handle temporary errors differently (e.g. don't mark them as crawled)
+				o.crawledDomains[res.Domain] = struct{}{}
 
 				// parallelized because otherwise
 				// it fails to keep up with the crawler
@@ -95,9 +102,13 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseS
 					peer := res.Peers[i]
 					g.Go(func() error {
 						// check if the peer was already this session
-						// parallel access to the map is safe
-						if _, ok := o.domainCrawled[peer]; ok {
+						if o.wasCrawled(peer) {
 							slog.InfoCtx(ctx, "peer was already crawled", "peer", peer)
+							return nil
+						}
+
+						if o.isBlocked(peer) {
+							slog.InfoCtx(ctx, "peer is blocked", "peer", peer)
 							return nil
 						}
 
@@ -120,4 +131,27 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseS
 	// this will hang until the context is exceeded
 	// this is expected
 	return g.Wait()
+}
+
+func (o *Orchestrator) wasCrawled(domain string) bool {
+	// parallel access to the map is safe
+	_, ok := o.crawledDomains[domain]
+	return ok
+}
+
+// isBlocked returns true if the domain is blocked.
+func (o *Orchestrator) isBlocked(domain string) bool {
+	// we need to block domains and subdomains
+	// e.g. blocking ngrok.io should also block a.ngrok.io
+	for _, blockedDomain := range o.blockedDomains {
+		if domain == blockedDomain {
+			return true
+		}
+
+		if strings.HasSuffix(domain, blockedDomain) {
+			return true
+		}
+	}
+
+	return false
 }

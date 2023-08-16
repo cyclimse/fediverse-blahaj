@@ -14,12 +14,16 @@ WHERE servers.id = $1
 LIMIT 1;
 
 
--- name: ListSeversPaginated :many
-SELECT *
+-- TODO: these types of paginated queries are not efficient
+--       we should use a cursor instead or a CTE
+-- name: ListServersPaginated :many
+SELECT *,
+  COUNT(*) OVER() AS total_count
 FROM servers
   JOIN crawls ON crawls.id = servers.last_crawl_id
-WHERE servers.deleted_at IS NULL
-ORDER BY servers.created_at DESC
+WHERE deleted_at IS NULL
+  AND total_users > $3
+ORDER BY total_users DESC
 LIMIT $1 OFFSET $2;
 
 
@@ -35,9 +39,11 @@ SELECT domain
 FROM unnest(@domains::varchar(255) []) domain ON CONFLICT DO NOTHING;
 
 
--- name: CreateCrawl :one
+-- name: CreateCompletedCrawl :one
 INSERT INTO crawls (
     server_id,
+    status,
+    software_name,
     number_of_peers,
     open_registrations,
     total_users,
@@ -46,7 +52,13 @@ INSERT INTO crawls (
     local_posts,
     local_comments
   )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES ($1, 'completed', $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING *;
+
+
+-- name: CreateFailedCrawl :one
+INSERT INTO crawls (server_id, status, error_msg)
+VALUES ($1, $2, $3)
 RETURNING *;
 
 
@@ -60,8 +72,10 @@ WHERE domain = ANY(@domains::varchar(255) []) ON CONFLICT DO NOTHING;
 
 -- name: UpdateServerLastCrawlID :exec
 UPDATE servers
-SET last_crawl_id = $1
-WHERE id = $2;
+SET last_crawl_id = $1,
+  status = $2,
+  updated_at = NOW()
+WHERE id = $3;
 
 
 -- name: DeleteServerByID :exec

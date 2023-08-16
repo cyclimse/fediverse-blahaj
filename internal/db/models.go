@@ -11,14 +11,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CrawlStatus string
+
+const (
+	CrawlStatusUnknown       CrawlStatus = "unknown"
+	CrawlStatusCompleted     CrawlStatus = "completed"
+	CrawlStatusFailed        CrawlStatus = "failed"
+	CrawlStatusBlocked       CrawlStatus = "blocked"
+	CrawlStatusTimeout       CrawlStatus = "timeout"
+	CrawlStatusInternalError CrawlStatus = "internal_error"
+)
+
+func (e *CrawlStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CrawlStatus(s)
+	case string:
+		*e = CrawlStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CrawlStatus: %T", src)
+	}
+	return nil
+}
+
+type NullCrawlStatus struct {
+	CrawlStatus CrawlStatus
+	Valid       bool // Valid is true if CrawlStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCrawlStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.CrawlStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CrawlStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCrawlStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CrawlStatus), nil
+}
+
 type ServerStatus string
 
 const (
-	ServerStatusActive   ServerStatus = "active"
-	ServerStatusInactive ServerStatus = "inactive"
-	ServerStatusDeleted  ServerStatus = "deleted"
-	ServerStatusError    ServerStatus = "error"
-	ServerStatusUnknown  ServerStatus = "unknown"
+	ServerStatusUnknown ServerStatus = "unknown"
+	ServerStatusOnline  ServerStatus = "online"
+	ServerStatusOffline ServerStatus = "offline"
 )
 
 func (e *ServerStatus) Scan(src interface{}) error {
@@ -59,9 +103,12 @@ func (ns NullServerStatus) Value() (driver.Value, error) {
 type Crawl struct {
 	ID                pgtype.UUID
 	ServerID          pgtype.UUID
-	CreatedAt         pgtype.Timestamptz
-	NumberOfPeers     int32
-	OpenRegistrations bool
+	Status            CrawlStatus
+	ErrorMsg          pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	SoftwareName      pgtype.Text
+	NumberOfPeers     pgtype.Int4
+	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
 	ActiveHalfYear    pgtype.Int4
 	ActiveMonth       pgtype.Int4

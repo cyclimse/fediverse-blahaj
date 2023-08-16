@@ -11,9 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createCrawl = `-- name: CreateCrawl :one
+const createCompletedCrawl = `-- name: CreateCompletedCrawl :one
 INSERT INTO crawls (
     server_id,
+    status,
+    software_name,
     number_of_peers,
     open_registrations,
     total_users,
@@ -22,14 +24,15 @@ INSERT INTO crawls (
     local_posts,
     local_comments
   )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, server_id, created_at, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
+VALUES ($1, 'completed', $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, server_id, status, error_msg, started_at, software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
 `
 
-type CreateCrawlParams struct {
+type CreateCompletedCrawlParams struct {
 	ServerID          pgtype.UUID
-	NumberOfPeers     int32
-	OpenRegistrations bool
+	SoftwareName      pgtype.Text
+	NumberOfPeers     pgtype.Int4
+	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
 	ActiveHalfYear    pgtype.Int4
 	ActiveMonth       pgtype.Int4
@@ -37,9 +40,10 @@ type CreateCrawlParams struct {
 	LocalComments     pgtype.Int4
 }
 
-func (q *Queries) CreateCrawl(ctx context.Context, arg CreateCrawlParams) (Crawl, error) {
-	row := q.db.QueryRow(ctx, createCrawl,
+func (q *Queries) CreateCompletedCrawl(ctx context.Context, arg CreateCompletedCrawlParams) (Crawl, error) {
+	row := q.db.QueryRow(ctx, createCompletedCrawl,
 		arg.ServerID,
+		arg.SoftwareName,
 		arg.NumberOfPeers,
 		arg.OpenRegistrations,
 		arg.TotalUsers,
@@ -52,7 +56,43 @@ func (q *Queries) CreateCrawl(ctx context.Context, arg CreateCrawlParams) (Crawl
 	err := row.Scan(
 		&i.ID,
 		&i.ServerID,
-		&i.CreatedAt,
+		&i.Status,
+		&i.ErrorMsg,
+		&i.StartedAt,
+		&i.SoftwareName,
+		&i.NumberOfPeers,
+		&i.OpenRegistrations,
+		&i.TotalUsers,
+		&i.ActiveHalfYear,
+		&i.ActiveMonth,
+		&i.LocalPosts,
+		&i.LocalComments,
+	)
+	return i, err
+}
+
+const createFailedCrawl = `-- name: CreateFailedCrawl :one
+INSERT INTO crawls (server_id, status, error_msg)
+VALUES ($1, $2, $3)
+RETURNING id, server_id, status, error_msg, started_at, software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
+`
+
+type CreateFailedCrawlParams struct {
+	ServerID pgtype.UUID
+	Status   CrawlStatus
+	ErrorMsg pgtype.Text
+}
+
+func (q *Queries) CreateFailedCrawl(ctx context.Context, arg CreateFailedCrawlParams) (Crawl, error) {
+	row := q.db.QueryRow(ctx, createFailedCrawl, arg.ServerID, arg.Status, arg.ErrorMsg)
+	var i Crawl
+	err := row.Scan(
+		&i.ID,
+		&i.ServerID,
+		&i.Status,
+		&i.ErrorMsg,
+		&i.StartedAt,
+		&i.SoftwareName,
 		&i.NumberOfPeers,
 		&i.OpenRegistrations,
 		&i.TotalUsers,
@@ -113,7 +153,7 @@ func (q *Queries) DeleteServerByID(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getServerWithLastCrawlByID = `-- name: GetServerWithLastCrawlByID :one
-SELECT servers.id, domain, status, servers.created_at, deleted_at, updated_at, software_name, last_crawl_id, crawls.id, server_id, crawls.created_at, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
+SELECT servers.id, domain, servers.status, created_at, deleted_at, updated_at, servers.software_name, last_crawl_id, crawls.id, server_id, crawls.status, error_msg, started_at, crawls.software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
 FROM servers
   JOIN crawls ON crawls.id = servers.last_crawl_id
 WHERE servers.id = $1
@@ -132,9 +172,12 @@ type GetServerWithLastCrawlByIDRow struct {
 	LastCrawlID       pgtype.UUID
 	ID_2              pgtype.UUID
 	ServerID          pgtype.UUID
-	CreatedAt_2       pgtype.Timestamptz
-	NumberOfPeers     int32
-	OpenRegistrations bool
+	Status_2          CrawlStatus
+	ErrorMsg          pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	SoftwareName_2    pgtype.Text
+	NumberOfPeers     pgtype.Int4
+	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
 	ActiveHalfYear    pgtype.Int4
 	ActiveMonth       pgtype.Int4
@@ -156,7 +199,10 @@ func (q *Queries) GetServerWithLastCrawlByID(ctx context.Context, id pgtype.UUID
 		&i.LastCrawlID,
 		&i.ID_2,
 		&i.ServerID,
-		&i.CreatedAt_2,
+		&i.Status_2,
+		&i.ErrorMsg,
+		&i.StartedAt,
+		&i.SoftwareName_2,
 		&i.NumberOfPeers,
 		&i.OpenRegistrations,
 		&i.TotalUsers,
@@ -191,21 +237,24 @@ func (q *Queries) GetSeverByDomain(ctx context.Context, domain string) (Server, 
 	return i, err
 }
 
-const listSeversPaginated = `-- name: ListSeversPaginated :many
-SELECT servers.id, domain, status, servers.created_at, deleted_at, updated_at, software_name, last_crawl_id, crawls.id, server_id, crawls.created_at, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
+const listServersPaginated = `-- name: ListServersPaginated :many
+SELECT servers.id, domain, servers.status, created_at, deleted_at, updated_at, servers.software_name, last_crawl_id, crawls.id, server_id, crawls.status, error_msg, started_at, crawls.software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments,
+  COUNT(*) OVER() AS total_count
 FROM servers
   JOIN crawls ON crawls.id = servers.last_crawl_id
-WHERE servers.deleted_at IS NULL
-ORDER BY servers.created_at DESC
+WHERE deleted_at IS NULL
+  AND total_users > $3
+ORDER BY total_users DESC
 LIMIT $1 OFFSET $2
 `
 
-type ListSeversPaginatedParams struct {
-	Limit  int32
-	Offset int32
+type ListServersPaginatedParams struct {
+	Limit      int32
+	Offset     int32
+	TotalUsers pgtype.Int4
 }
 
-type ListSeversPaginatedRow struct {
+type ListServersPaginatedRow struct {
 	ID                pgtype.UUID
 	Domain            string
 	Status            ServerStatus
@@ -216,25 +265,32 @@ type ListSeversPaginatedRow struct {
 	LastCrawlID       pgtype.UUID
 	ID_2              pgtype.UUID
 	ServerID          pgtype.UUID
-	CreatedAt_2       pgtype.Timestamptz
-	NumberOfPeers     int32
-	OpenRegistrations bool
+	Status_2          CrawlStatus
+	ErrorMsg          pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	SoftwareName_2    pgtype.Text
+	NumberOfPeers     pgtype.Int4
+	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
 	ActiveHalfYear    pgtype.Int4
 	ActiveMonth       pgtype.Int4
 	LocalPosts        pgtype.Int4
 	LocalComments     pgtype.Int4
+	TotalCount        int64
 }
 
-func (q *Queries) ListSeversPaginated(ctx context.Context, arg ListSeversPaginatedParams) ([]ListSeversPaginatedRow, error) {
-	rows, err := q.db.Query(ctx, listSeversPaginated, arg.Limit, arg.Offset)
+// TODO: these types of paginated queries are not efficient
+//
+//	we should use a cursor instead or a CTE
+func (q *Queries) ListServersPaginated(ctx context.Context, arg ListServersPaginatedParams) ([]ListServersPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listServersPaginated, arg.Limit, arg.Offset, arg.TotalUsers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSeversPaginatedRow
+	var items []ListServersPaginatedRow
 	for rows.Next() {
-		var i ListSeversPaginatedRow
+		var i ListServersPaginatedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Domain,
@@ -246,7 +302,10 @@ func (q *Queries) ListSeversPaginated(ctx context.Context, arg ListSeversPaginat
 			&i.LastCrawlID,
 			&i.ID_2,
 			&i.ServerID,
-			&i.CreatedAt_2,
+			&i.Status_2,
+			&i.ErrorMsg,
+			&i.StartedAt,
+			&i.SoftwareName_2,
 			&i.NumberOfPeers,
 			&i.OpenRegistrations,
 			&i.TotalUsers,
@@ -254,6 +313,7 @@ func (q *Queries) ListSeversPaginated(ctx context.Context, arg ListSeversPaginat
 			&i.ActiveMonth,
 			&i.LocalPosts,
 			&i.LocalComments,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}
@@ -285,16 +345,19 @@ func (q *Queries) UpdatePeeringRelationships(ctx context.Context, arg UpdatePeer
 
 const updateServerLastCrawlID = `-- name: UpdateServerLastCrawlID :exec
 UPDATE servers
-SET last_crawl_id = $1
-WHERE id = $2
+SET last_crawl_id = $1,
+  status = $2,
+  updated_at = NOW()
+WHERE id = $3
 `
 
 type UpdateServerLastCrawlIDParams struct {
 	LastCrawlID pgtype.UUID
+	Status      ServerStatus
 	ID          pgtype.UUID
 }
 
 func (q *Queries) UpdateServerLastCrawlID(ctx context.Context, arg UpdateServerLastCrawlIDParams) error {
-	_, err := q.db.Exec(ctx, updateServerLastCrawlID, arg.LastCrawlID, arg.ID)
+	_, err := q.db.Exec(ctx, updateServerLastCrawlID, arg.LastCrawlID, arg.Status, arg.ID)
 	return err
 }

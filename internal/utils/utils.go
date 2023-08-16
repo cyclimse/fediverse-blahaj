@@ -11,7 +11,21 @@ func IntPtrToVal[T constraints.Integer](ptr *T) T {
 	return *ptr
 }
 
-func IntValToPtr[T constraints.Integer](val T, valid bool) *T {
+func StringPtrToVal(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
+}
+
+func BoolPtrToVal(ptr *bool) bool {
+	if ptr == nil {
+		return false
+	}
+	return *ptr
+}
+
+func ValToPtr[T any](val T, valid bool) *T {
 	if !valid {
 		return nil
 	}
