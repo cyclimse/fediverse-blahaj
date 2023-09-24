@@ -11,13 +11,13 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-servers:
+instances:
 - url: https://petstore.swagger.io/v2
 paths:
-  /servers:
+  /instances:
     get:
-      summary: List all servers
-      operationId: listServers
+      summary: List all instances
+      operationId: listInstances
       parameters:
       - name: software
         in: query
@@ -48,7 +48,7 @@ paths:
           default: 30
       responses:
         '200':
-          description: paginated array of servers
+          description: paginated array of instances
           content:
             application/json:
               schema:
@@ -62,7 +62,7 @@ paths:
                   results:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Server'
+                      $ref: '#/components/schemas/Instance'
                   total:
                     type: integer
                     format: int64
@@ -80,25 +80,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /servers/{id}:
+  /instances/{id}:
     get:
-      summary: Info for a specific server
-      operationId: getServerByID
+      summary: Info for a specific instance
+      operationId: getInstanceByID
       parameters:
       - name: id
         in: path
-        description: ID of the server to fetch
+        description: ID of the instance to fetch
         required: true
         schema:
           type: string
           format: uuid
       responses:
         '200':
-          description: server response
+          description: instance response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Server'
+                $ref: '#/components/schemas/Instance'
         default:
           description: unexpected error
           content:
@@ -106,14 +106,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /servers/{id}/crawls:
+  /instances/{id}/crawls:
     get:
-      summary: List all crawls for a server
-      operationId: listCrawlsForServer
+      summary: List all crawls for a instance
+      operationId: listCrawlsForInstance
       parameters:
       - name: id
         in: path
-        description: ID of the server to fetch
+        description: ID of the instance to fetch
         required: true
         schema:
           type: string
@@ -173,7 +173,7 @@ paths:
 components:
   schemas:
 
-    Server:
+    Instance:
       type: object
       required:
       - id
@@ -187,7 +187,7 @@ components:
           type: string
         status:
           type: string
-          enum: [unknown, online, offline]
+          enum: [unknown, up, down, unhealthy]
         description:
           type: string
         software:
@@ -219,15 +219,16 @@ components:
       type: object
       required:
       - id
-      - server_id
+      - instance_id
       - started_at
       - finished_at
+      - duration_seconds
       - status
       properties:
         id:
           type: string
           format: uuid
-        server_id:
+        instance_id:
           type: string
           format: uuid
         started_at:
@@ -236,10 +237,15 @@ components:
         finished_at:
           type: string
           format: date-time
+        duration_seconds:
+          type: number
+          format: double
         status:
           type: string
-          enum: [pending, running, finished, failed]
-        error:
+          enum: [unknown, completed, failed]
+        errorCode:
+          type: string
+        errorCodeDescription:
           type: string
         number_of_peers:
           type: integer
@@ -259,6 +265,8 @@ components:
         local_comments:
           type: integer
           format: int32
+        raw_nodeinfo:
+          type: object
 
     Error:
       type: object

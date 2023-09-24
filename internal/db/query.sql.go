@@ -7,30 +7,62 @@ package db
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createCompletedCrawl = `-- name: CreateCompletedCrawl :one
-INSERT INTO crawls (
-    server_id,
+const createCrawl = `-- name: CreateCrawl :one
+INSERT INTO crawl (
+    instance_id,
     status,
+    error_code,
+    error_msg,
+    started_at,
+    finished_at,
     software_name,
+    software_version,
     number_of_peers,
     open_registrations,
     total_users,
     active_half_year,
     active_month,
     local_posts,
-    local_comments
+    local_comments,
+    raw_nodeinfo,
+    addresses
   )
-VALUES ($1, 'completed', $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, server_id, status, error_msg, started_at, software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17
+  )
+RETURNING id, instance_id, status, error_code, error_msg, started_at, finished_at, software_name, software_version, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments, raw_nodeinfo, addresses
 `
 
-type CreateCompletedCrawlParams struct {
-	ServerID          pgtype.UUID
+type CreateCrawlParams struct {
+	InstanceID        pgtype.UUID
+	Status            CrawlStatus
+	ErrorCode         NullCrawlErrorCode
+	ErrorMsg          pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
 	SoftwareName      pgtype.Text
+	SoftwareVersion   pgtype.Text
 	NumberOfPeers     pgtype.Int4
 	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
@@ -38,12 +70,20 @@ type CreateCompletedCrawlParams struct {
 	ActiveMonth       pgtype.Int4
 	LocalPosts        pgtype.Int4
 	LocalComments     pgtype.Int4
+	RawNodeinfo       []byte
+	Addresses         []netip.Addr
 }
 
-func (q *Queries) CreateCompletedCrawl(ctx context.Context, arg CreateCompletedCrawlParams) (Crawl, error) {
-	row := q.db.QueryRow(ctx, createCompletedCrawl,
-		arg.ServerID,
+func (q *Queries) CreateCrawl(ctx context.Context, arg CreateCrawlParams) (Crawl, error) {
+	row := q.db.QueryRow(ctx, createCrawl,
+		arg.InstanceID,
+		arg.Status,
+		arg.ErrorCode,
+		arg.ErrorMsg,
+		arg.StartedAt,
+		arg.FinishedAt,
 		arg.SoftwareName,
+		arg.SoftwareVersion,
 		arg.NumberOfPeers,
 		arg.OpenRegistrations,
 		arg.TotalUsers,
@@ -51,15 +91,20 @@ func (q *Queries) CreateCompletedCrawl(ctx context.Context, arg CreateCompletedC
 		arg.ActiveMonth,
 		arg.LocalPosts,
 		arg.LocalComments,
+		arg.RawNodeinfo,
+		arg.Addresses,
 	)
 	var i Crawl
 	err := row.Scan(
 		&i.ID,
-		&i.ServerID,
+		&i.InstanceID,
 		&i.Status,
+		&i.ErrorCode,
 		&i.ErrorMsg,
 		&i.StartedAt,
+		&i.FinishedAt,
 		&i.SoftwareName,
+		&i.SoftwareVersion,
 		&i.NumberOfPeers,
 		&i.OpenRegistrations,
 		&i.TotalUsers,
@@ -67,57 +112,26 @@ func (q *Queries) CreateCompletedCrawl(ctx context.Context, arg CreateCompletedC
 		&i.ActiveMonth,
 		&i.LocalPosts,
 		&i.LocalComments,
+		&i.RawNodeinfo,
+		&i.Addresses,
 	)
 	return i, err
 }
 
-const createFailedCrawl = `-- name: CreateFailedCrawl :one
-INSERT INTO crawls (server_id, status, error_msg)
-VALUES ($1, $2, $3)
-RETURNING id, server_id, status, error_msg, started_at, software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
-`
-
-type CreateFailedCrawlParams struct {
-	ServerID pgtype.UUID
-	Status   CrawlStatus
-	ErrorMsg pgtype.Text
-}
-
-func (q *Queries) CreateFailedCrawl(ctx context.Context, arg CreateFailedCrawlParams) (Crawl, error) {
-	row := q.db.QueryRow(ctx, createFailedCrawl, arg.ServerID, arg.Status, arg.ErrorMsg)
-	var i Crawl
-	err := row.Scan(
-		&i.ID,
-		&i.ServerID,
-		&i.Status,
-		&i.ErrorMsg,
-		&i.StartedAt,
-		&i.SoftwareName,
-		&i.NumberOfPeers,
-		&i.OpenRegistrations,
-		&i.TotalUsers,
-		&i.ActiveHalfYear,
-		&i.ActiveMonth,
-		&i.LocalPosts,
-		&i.LocalComments,
-	)
-	return i, err
-}
-
-const createServer = `-- name: CreateServer :one
-INSERT INTO servers (domain, software_name)
+const createInstance = `-- name: CreateInstance :one
+INSERT INTO instance (domain, software_name)
 VALUES ($1, $2)
 RETURNING id, domain, status, created_at, deleted_at, updated_at, software_name, last_crawl_id
 `
 
-type CreateServerParams struct {
+type CreateInstanceParams struct {
 	Domain       string
 	SoftwareName pgtype.Text
 }
 
-func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Server, error) {
-	row := q.db.QueryRow(ctx, createServer, arg.Domain, arg.SoftwareName)
-	var i Server
+func (q *Queries) CreateInstance(ctx context.Context, arg CreateInstanceParams) (Instance, error) {
+	row := q.db.QueryRow(ctx, createInstance, arg.Domain, arg.SoftwareName)
+	var i Instance
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -131,51 +145,77 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 	return i, err
 }
 
-const createServersFromDomainList = `-- name: CreateServersFromDomainList :exec
-INSERT INTO servers (domain)
+const createInstancesFromDomainList = `-- name: CreateInstancesFromDomainList :exec
+INSERT INTO instance (domain)
 SELECT domain
 FROM unnest($1::varchar(255) []) domain ON CONFLICT DO NOTHING
 `
 
-func (q *Queries) CreateServersFromDomainList(ctx context.Context, domains []string) error {
-	_, err := q.db.Exec(ctx, createServersFromDomainList, domains)
+func (q *Queries) CreateInstancesFromDomainList(ctx context.Context, domains []string) error {
+	_, err := q.db.Exec(ctx, createInstancesFromDomainList, domains)
 	return err
 }
 
-const deleteServerByID = `-- name: DeleteServerByID :exec
-DELETE FROM servers
+const deleteInstanceByID = `-- name: DeleteInstanceByID :exec
+DELETE FROM instance
 WHERE id = $1
 `
 
-func (q *Queries) DeleteServerByID(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteServerByID, id)
+func (q *Queries) DeleteInstanceByID(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteInstanceByID, id)
 	return err
 }
 
-const getServerWithLastCrawlByID = `-- name: GetServerWithLastCrawlByID :one
-SELECT servers.id, domain, servers.status, created_at, deleted_at, updated_at, servers.software_name, last_crawl_id, crawls.id, server_id, crawls.status, error_msg, started_at, crawls.software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments
-FROM servers
-  JOIN crawls ON crawls.id = servers.last_crawl_id
-WHERE servers.id = $1
-  AND servers.deleted_at IS NULL
+const getInstanceByDomain = `-- name: GetInstanceByDomain :one
+SELECT id, domain, status, created_at, deleted_at, updated_at, software_name, last_crawl_id
+FROM instance
+WHERE domain = $1
 LIMIT 1
 `
 
-type GetServerWithLastCrawlByIDRow struct {
+func (q *Queries) GetInstanceByDomain(ctx context.Context, domain string) (Instance, error) {
+	row := q.db.QueryRow(ctx, getInstanceByDomain, domain)
+	var i Instance
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.Status,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.UpdatedAt,
+		&i.SoftwareName,
+		&i.LastCrawlID,
+	)
+	return i, err
+}
+
+const getInstanceWithLastCrawlByID = `-- name: GetInstanceWithLastCrawlByID :one
+SELECT instance.id, domain, instance.status, created_at, deleted_at, updated_at, instance.software_name, last_crawl_id, crawl.id, instance_id, crawl.status, error_code, error_msg, started_at, finished_at, crawl.software_name, software_version, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments, raw_nodeinfo, addresses
+FROM instance
+  JOIN crawl ON crawl.id = instance.last_crawl_id
+WHERE instance.id = $1
+  AND instance.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetInstanceWithLastCrawlByIDRow struct {
 	ID                pgtype.UUID
 	Domain            string
-	Status            ServerStatus
+	Status            InstanceStatus
 	CreatedAt         pgtype.Timestamptz
 	DeletedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
 	SoftwareName      pgtype.Text
 	LastCrawlID       pgtype.UUID
 	ID_2              pgtype.UUID
-	ServerID          pgtype.UUID
+	InstanceID        pgtype.UUID
 	Status_2          CrawlStatus
+	ErrorCode         NullCrawlErrorCode
 	ErrorMsg          pgtype.Text
 	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
 	SoftwareName_2    pgtype.Text
+	SoftwareVersion   pgtype.Text
 	NumberOfPeers     pgtype.Int4
 	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
@@ -183,11 +223,13 @@ type GetServerWithLastCrawlByIDRow struct {
 	ActiveMonth       pgtype.Int4
 	LocalPosts        pgtype.Int4
 	LocalComments     pgtype.Int4
+	RawNodeinfo       []byte
+	Addresses         []netip.Addr
 }
 
-func (q *Queries) GetServerWithLastCrawlByID(ctx context.Context, id pgtype.UUID) (GetServerWithLastCrawlByIDRow, error) {
-	row := q.db.QueryRow(ctx, getServerWithLastCrawlByID, id)
-	var i GetServerWithLastCrawlByIDRow
+func (q *Queries) GetInstanceWithLastCrawlByID(ctx context.Context, id pgtype.UUID) (GetInstanceWithLastCrawlByIDRow, error) {
+	row := q.db.QueryRow(ctx, getInstanceWithLastCrawlByID, id)
+	var i GetInstanceWithLastCrawlByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
@@ -198,11 +240,14 @@ func (q *Queries) GetServerWithLastCrawlByID(ctx context.Context, id pgtype.UUID
 		&i.SoftwareName,
 		&i.LastCrawlID,
 		&i.ID_2,
-		&i.ServerID,
+		&i.InstanceID,
 		&i.Status_2,
+		&i.ErrorCode,
 		&i.ErrorMsg,
 		&i.StartedAt,
+		&i.FinishedAt,
 		&i.SoftwareName_2,
+		&i.SoftwareVersion,
 		&i.NumberOfPeers,
 		&i.OpenRegistrations,
 		&i.TotalUsers,
@@ -210,65 +255,65 @@ func (q *Queries) GetServerWithLastCrawlByID(ctx context.Context, id pgtype.UUID
 		&i.ActiveMonth,
 		&i.LocalPosts,
 		&i.LocalComments,
+		&i.RawNodeinfo,
+		&i.Addresses,
 	)
 	return i, err
 }
 
-const getSeverByDomain = `-- name: GetSeverByDomain :one
-SELECT id, domain, status, created_at, deleted_at, updated_at, software_name, last_crawl_id
-FROM servers
-WHERE domain = $1
-LIMIT 1
+const getPeersIDsByInstanceID = `-- name: GetPeersIDsByInstanceID :many
+SELECT peer_id
+FROM peering_relationship
+  JOIN instance ON instance.id = peer_id
+  AND instance.deleted_at IS NULL
+WHERE instance_id = $1
 `
 
-func (q *Queries) GetSeverByDomain(ctx context.Context, domain string) (Server, error) {
-	row := q.db.QueryRow(ctx, getSeverByDomain, domain)
-	var i Server
-	err := row.Scan(
-		&i.ID,
-		&i.Domain,
-		&i.Status,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.UpdatedAt,
-		&i.SoftwareName,
-		&i.LastCrawlID,
-	)
-	return i, err
+func (q *Queries) GetPeersIDsByInstanceID(ctx context.Context, instanceID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getPeersIDsByInstanceID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var peer_id pgtype.UUID
+		if err := rows.Scan(&peer_id); err != nil {
+			return nil, err
+		}
+		items = append(items, peer_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const listServersPaginated = `-- name: ListServersPaginated :many
-SELECT servers.id, domain, servers.status, created_at, deleted_at, updated_at, servers.software_name, last_crawl_id, crawls.id, server_id, crawls.status, error_msg, started_at, crawls.software_name, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments,
+const listCrawlsPaginated = `-- name: ListCrawlsPaginated :many
+SELECT id, instance_id, status, error_code, error_msg, started_at, finished_at, software_name, software_version, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments, raw_nodeinfo, addresses,
   COUNT(*) OVER() AS total_count
-FROM servers
-  JOIN crawls ON crawls.id = servers.last_crawl_id
-WHERE deleted_at IS NULL
-  AND total_users > $3
-ORDER BY total_users DESC
-LIMIT $1 OFFSET $2
+FROM crawl
+WHERE instance_id = $1
+ORDER BY started_at DESC
+LIMIT $2 OFFSET $3
 `
 
-type ListServersPaginatedParams struct {
+type ListCrawlsPaginatedParams struct {
+	InstanceID pgtype.UUID
 	Limit      int32
 	Offset     int32
-	TotalUsers pgtype.Int4
 }
 
-type ListServersPaginatedRow struct {
+type ListCrawlsPaginatedRow struct {
 	ID                pgtype.UUID
-	Domain            string
-	Status            ServerStatus
-	CreatedAt         pgtype.Timestamptz
-	DeletedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	SoftwareName      pgtype.Text
-	LastCrawlID       pgtype.UUID
-	ID_2              pgtype.UUID
-	ServerID          pgtype.UUID
-	Status_2          CrawlStatus
+	InstanceID        pgtype.UUID
+	Status            CrawlStatus
+	ErrorCode         NullCrawlErrorCode
 	ErrorMsg          pgtype.Text
 	StartedAt         pgtype.Timestamptz
-	SoftwareName_2    pgtype.Text
+	FinishedAt        pgtype.Timestamptz
+	SoftwareName      pgtype.Text
+	SoftwareVersion   pgtype.Text
 	NumberOfPeers     pgtype.Int4
 	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
@@ -276,36 +321,30 @@ type ListServersPaginatedRow struct {
 	ActiveMonth       pgtype.Int4
 	LocalPosts        pgtype.Int4
 	LocalComments     pgtype.Int4
+	RawNodeinfo       []byte
+	Addresses         []netip.Addr
 	TotalCount        int64
 }
 
-// TODO: these types of paginated queries are not efficient
-//
-//	we should use a cursor instead or a CTE
-func (q *Queries) ListServersPaginated(ctx context.Context, arg ListServersPaginatedParams) ([]ListServersPaginatedRow, error) {
-	rows, err := q.db.Query(ctx, listServersPaginated, arg.Limit, arg.Offset, arg.TotalUsers)
+func (q *Queries) ListCrawlsPaginated(ctx context.Context, arg ListCrawlsPaginatedParams) ([]ListCrawlsPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listCrawlsPaginated, arg.InstanceID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListServersPaginatedRow
+	var items []ListCrawlsPaginatedRow
 	for rows.Next() {
-		var i ListServersPaginatedRow
+		var i ListCrawlsPaginatedRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Domain,
+			&i.InstanceID,
 			&i.Status,
-			&i.CreatedAt,
-			&i.DeletedAt,
-			&i.UpdatedAt,
-			&i.SoftwareName,
-			&i.LastCrawlID,
-			&i.ID_2,
-			&i.ServerID,
-			&i.Status_2,
+			&i.ErrorCode,
 			&i.ErrorMsg,
 			&i.StartedAt,
-			&i.SoftwareName_2,
+			&i.FinishedAt,
+			&i.SoftwareName,
+			&i.SoftwareVersion,
 			&i.NumberOfPeers,
 			&i.OpenRegistrations,
 			&i.TotalUsers,
@@ -313,6 +352,8 @@ func (q *Queries) ListServersPaginated(ctx context.Context, arg ListServersPagin
 			&i.ActiveMonth,
 			&i.LocalPosts,
 			&i.LocalComments,
+			&i.RawNodeinfo,
+			&i.Addresses,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
@@ -325,39 +366,169 @@ func (q *Queries) ListServersPaginated(ctx context.Context, arg ListServersPagin
 	return items, nil
 }
 
+const listErrorCodeDescriptions = `-- name: ListErrorCodeDescriptions :many
+SELECT error_code, description
+FROM crawl_errors
+`
+
+func (q *Queries) ListErrorCodeDescriptions(ctx context.Context) ([]CrawlError, error) {
+	rows, err := q.db.Query(ctx, listErrorCodeDescriptions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CrawlError
+	for rows.Next() {
+		var i CrawlError
+		if err := rows.Scan(&i.ErrorCode, &i.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInstancesPaginated = `-- name: ListInstancesPaginated :many
+SELECT instance.id, domain, instance.status, created_at, deleted_at, updated_at, instance.software_name, last_crawl_id, crawl.id, instance_id, crawl.status, error_code, error_msg, started_at, finished_at, crawl.software_name, software_version, number_of_peers, open_registrations, total_users, active_half_year, active_month, local_posts, local_comments, raw_nodeinfo, addresses,
+  COUNT(*) OVER() AS total_count
+FROM instance
+  JOIN crawl ON crawl.id = instance.last_crawl_id
+WHERE deleted_at IS NULL
+  AND total_users > $3
+ORDER BY total_users DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListInstancesPaginatedParams struct {
+	Limit      int32
+	Offset     int32
+	TotalUsers pgtype.Int4
+}
+
+type ListInstancesPaginatedRow struct {
+	ID                pgtype.UUID
+	Domain            string
+	Status            InstanceStatus
+	CreatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	SoftwareName      pgtype.Text
+	LastCrawlID       pgtype.UUID
+	ID_2              pgtype.UUID
+	InstanceID        pgtype.UUID
+	Status_2          CrawlStatus
+	ErrorCode         NullCrawlErrorCode
+	ErrorMsg          pgtype.Text
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	SoftwareName_2    pgtype.Text
+	SoftwareVersion   pgtype.Text
+	NumberOfPeers     pgtype.Int4
+	OpenRegistrations pgtype.Bool
+	TotalUsers        pgtype.Int4
+	ActiveHalfYear    pgtype.Int4
+	ActiveMonth       pgtype.Int4
+	LocalPosts        pgtype.Int4
+	LocalComments     pgtype.Int4
+	RawNodeinfo       []byte
+	Addresses         []netip.Addr
+	TotalCount        int64
+}
+
+// TODO: these types of paginated queries are not efficient
+//
+//	we should use a cursor instead or a CTE
+func (q *Queries) ListInstancesPaginated(ctx context.Context, arg ListInstancesPaginatedParams) ([]ListInstancesPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listInstancesPaginated, arg.Limit, arg.Offset, arg.TotalUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInstancesPaginatedRow
+	for rows.Next() {
+		var i ListInstancesPaginatedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Domain,
+			&i.Status,
+			&i.CreatedAt,
+			&i.DeletedAt,
+			&i.UpdatedAt,
+			&i.SoftwareName,
+			&i.LastCrawlID,
+			&i.ID_2,
+			&i.InstanceID,
+			&i.Status_2,
+			&i.ErrorCode,
+			&i.ErrorMsg,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.SoftwareName_2,
+			&i.SoftwareVersion,
+			&i.NumberOfPeers,
+			&i.OpenRegistrations,
+			&i.TotalUsers,
+			&i.ActiveHalfYear,
+			&i.ActiveMonth,
+			&i.LocalPosts,
+			&i.LocalComments,
+			&i.RawNodeinfo,
+			&i.Addresses,
+			&i.TotalCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateInstanceFromLastCrawl = `-- name: UpdateInstanceFromLastCrawl :exec
+UPDATE instance
+SET last_crawl_id = $2,
+  status = $3,
+  software_name = $4,
+  updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateInstanceFromLastCrawlParams struct {
+	ID           pgtype.UUID
+	LastCrawlID  pgtype.UUID
+	Status       InstanceStatus
+	SoftwareName pgtype.Text
+}
+
+func (q *Queries) UpdateInstanceFromLastCrawl(ctx context.Context, arg UpdateInstanceFromLastCrawlParams) error {
+	_, err := q.db.Exec(ctx, updateInstanceFromLastCrawl,
+		arg.ID,
+		arg.LastCrawlID,
+		arg.Status,
+		arg.SoftwareName,
+	)
+	return err
+}
+
 const updatePeeringRelationships = `-- name: UpdatePeeringRelationships :exec
-INSERT INTO peering_relationships (server_id, peer_id)
+INSERT INTO peering_relationship (instance_id, peer_id)
 SELECT $1,
   id
-FROM servers
+FROM instance
 WHERE domain = ANY($2::varchar(255) []) ON CONFLICT DO NOTHING
 `
 
 type UpdatePeeringRelationshipsParams struct {
-	ServerID pgtype.UUID
-	Domains  []string
+	InstanceID pgtype.UUID
+	Domains    []string
 }
 
 func (q *Queries) UpdatePeeringRelationships(ctx context.Context, arg UpdatePeeringRelationshipsParams) error {
-	_, err := q.db.Exec(ctx, updatePeeringRelationships, arg.ServerID, arg.Domains)
-	return err
-}
-
-const updateServerLastCrawlID = `-- name: UpdateServerLastCrawlID :exec
-UPDATE servers
-SET last_crawl_id = $1,
-  status = $2,
-  updated_at = NOW()
-WHERE id = $3
-`
-
-type UpdateServerLastCrawlIDParams struct {
-	LastCrawlID pgtype.UUID
-	Status      ServerStatus
-	ID          pgtype.UUID
-}
-
-func (q *Queries) UpdateServerLastCrawlID(ctx context.Context, arg UpdateServerLastCrawlIDParams) error {
-	_, err := q.db.Exec(ctx, updateServerLastCrawlID, arg.LastCrawlID, arg.Status, arg.ID)
+	_, err := q.db.Exec(ctx, updatePeeringRelationships, arg.InstanceID, arg.Domains)
 	return err
 }

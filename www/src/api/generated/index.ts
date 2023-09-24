@@ -12,6 +12,6 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export { Crawl } from './models/Crawl';
 export type { Error } from './models/Error';
-export { Server } from './models/Server';
+export { Instance } from './models/Instance';
 
 export { DefaultService } from './services/DefaultService';

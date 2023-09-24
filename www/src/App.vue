@@ -1,9 +1,20 @@
 <script setup lang="ts">
+import { Suspense } from 'vue'
+import NavBar from './components/NavBar.vue'
 </script>
 
 <template>
-  <router-view></router-view>
+  <header>
+    <NavBar />
+  </header>
+  <Suspense>
+    <template #default>
+      <router-view></router-view>
+    </template>
+    <template #fallback>
+      Loading...
+    </template>
+  </Suspense>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

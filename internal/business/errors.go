@@ -3,6 +3,6 @@ package business
 import "errors"
 
 var (
-	// ErrServerNotFound is returned when a server is not found
-	ErrServerNotFound = errors.New("server not found")
+	// ErrInstanceNotFound is returned when a instance is not found
+	ErrInstanceNotFound = errors.New("instance not found")
 )

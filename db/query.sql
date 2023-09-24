@@ -1,83 +1,125 @@
--- name: GetSeverByDomain :one
+-- name: GetInstanceByDomain :one
 SELECT *
-FROM servers
+FROM instance
 WHERE domain = $1
 LIMIT 1;
 
 
--- name: GetServerWithLastCrawlByID :one
+-- name: GetInstanceWithLastCrawlByID :one
 SELECT *
-FROM servers
-  JOIN crawls ON crawls.id = servers.last_crawl_id
-WHERE servers.id = $1
-  AND servers.deleted_at IS NULL
+FROM instance
+  JOIN crawl ON crawl.id = instance.last_crawl_id
+WHERE instance.id = $1
+  AND instance.deleted_at IS NULL
 LIMIT 1;
+
+
+-- name: GetPeersIDsByInstanceID :many
+SELECT peer_id
+FROM peering_relationship
+  JOIN instance ON instance.id = peer_id
+  AND instance.deleted_at IS NULL
+WHERE instance_id = $1;
 
 
 -- TODO: these types of paginated queries are not efficient
 --       we should use a cursor instead or a CTE
--- name: ListServersPaginated :many
+-- name: ListInstancesPaginated :many
 SELECT *,
   COUNT(*) OVER() AS total_count
-FROM servers
-  JOIN crawls ON crawls.id = servers.last_crawl_id
+FROM instance
+  JOIN crawl ON crawl.id = instance.last_crawl_id
 WHERE deleted_at IS NULL
   AND total_users > $3
 ORDER BY total_users DESC
 LIMIT $1 OFFSET $2;
 
 
--- name: CreateServer :one
-INSERT INTO servers (domain, software_name)
+-- name: ListCrawlsPaginated :many
+SELECT *,
+  COUNT(*) OVER() AS total_count
+FROM crawl
+WHERE instance_id = $1
+ORDER BY started_at DESC
+LIMIT $2 OFFSET $3;
+
+
+-- name: ListErrorCodeDescriptions :many
+SELECT *
+FROM crawl_errors;
+
+
+-- name: CreateInstance :one
+INSERT INTO instance (domain, software_name)
 VALUES ($1, $2)
 RETURNING *;
 
 
--- name: CreateServersFromDomainList :exec
-INSERT INTO servers (domain)
+-- name: CreateInstancesFromDomainList :exec
+INSERT INTO instance (domain)
 SELECT domain
 FROM unnest(@domains::varchar(255) []) domain ON CONFLICT DO NOTHING;
 
 
--- name: CreateCompletedCrawl :one
-INSERT INTO crawls (
-    server_id,
+-- name: CreateCrawl :one
+INSERT INTO crawl (
+    instance_id,
     status,
+    error_code,
+    error_msg,
+    started_at,
+    finished_at,
     software_name,
+    software_version,
     number_of_peers,
     open_registrations,
     total_users,
     active_half_year,
     active_month,
     local_posts,
-    local_comments
+    local_comments,
+    raw_nodeinfo,
+    addresses
   )
-VALUES ($1, 'completed', $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING *;
-
-
--- name: CreateFailedCrawl :one
-INSERT INTO crawls (server_id, status, error_msg)
-VALUES ($1, $2, $3)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17
+  )
 RETURNING *;
 
 
 -- name: UpdatePeeringRelationships :exec
-INSERT INTO peering_relationships (server_id, peer_id)
+INSERT INTO peering_relationship (instance_id, peer_id)
 SELECT $1,
   id
-FROM servers
+FROM instance
 WHERE domain = ANY(@domains::varchar(255) []) ON CONFLICT DO NOTHING;
 
 
--- name: UpdateServerLastCrawlID :exec
-UPDATE servers
-SET last_crawl_id = $1,
-  status = $2,
+-- name: UpdateInstanceFromLastCrawl :exec
+UPDATE instance
+SET last_crawl_id = $2,
+  status = $3,
+  software_name = $4,
   updated_at = NOW()
-WHERE id = $3;
+WHERE id = $1;
 
 
--- name: DeleteServerByID :exec
-DELETE FROM servers
+-- name: DeleteInstanceByID :exec
+DELETE FROM instance
 WHERE id = $1;

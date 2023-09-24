@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
 	"time"
+
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
@@ -24,7 +27,7 @@ func main() {
 	o := orchestrator.New(business.BlockedDomains)
 
 	// create a channel to receive the results
-	results := make(chan models.FediverseServer, 100)
+	results := make(chan models.Crawl, 100)
 
 	// run the crawler and the business logic in parallel
 	// using errgroup to exit early if one of them fails
@@ -35,7 +38,7 @@ func main() {
 		// this will run until the context is cancelled
 		defer close(results)
 		// create a context with a timeout for the crawl
-		crawlCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		crawlCtx, cancel := context.WithTimeout(ctx, 5*60*time.Second)
 		defer cancel()
 		err := o.Crawl(crawlCtx, results)
 		if err != nil && crawlCtx.Err() != nil {
@@ -55,8 +58,10 @@ func main() {
 		if ctx.Err() != nil {
 			// context error, this is expected
 			// the context is cancelled when the timeout is reached
+			slog.InfoContext(ctx, "context error", "err", err)
 			return
 		}
-		panic(err)
+		slog.ErrorContext(ctx, "error", "err", err)
+		os.Exit(1)
 	}
 }

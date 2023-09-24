@@ -20,7 +20,8 @@ var knownVersions = []string{
 
 type Nodeinfo interface {
 	SchemaVersion() string
-	GetSoftwareName() string
+	SoftwareName() string
+	SoftwareVersion() string
 	IsRegistrationOpen() bool
 	TotalUsers() *int
 	ActiveUsersHalfyear() *int

@@ -12,7 +12,7 @@ The process of crawling the Fediverse should be as transparent as possible. We s
 
 ### Design
 
-* [ ] Ubiquitous language: clarify if we wan't to use Fediverse servers of Fediverse instances
+* [x] Ubiquitous language: clarify if we wan't to use Fediverse servers of Fediverse instances (done: Instance to be consistent with the ActivityPub vocabulary)
 * [ ] Find a name for the project
 
 ### Crawler

@@ -7,19 +7,68 @@ package db
 import (
 	"database/sql/driver"
 	"fmt"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type CrawlErrorCode string
+
+const (
+	CrawlErrorCodeUnknown                              CrawlErrorCode = "unknown"
+	CrawlErrorCodeTimeout                              CrawlErrorCode = "timeout"
+	CrawlErrorCodeDomainNotFound                       CrawlErrorCode = "domain_not_found"
+	CrawlErrorCodeUnreachable                          CrawlErrorCode = "unreachable"
+	CrawlErrorCodeInvalidNodeinfo                      CrawlErrorCode = "invalid_nodeinfo"
+	CrawlErrorCodeNodeinfoVersionNotSupportedByCrawler CrawlErrorCode = "nodeinfo_version_not_supported_by_crawler"
+	CrawlErrorCodeInvalidJson                          CrawlErrorCode = "invalid_json"
+	CrawlErrorCodeBlockedByRobotsTxt                   CrawlErrorCode = "blocked_by_robots_txt"
+	CrawlErrorCodeSoftwareNotSupportedByCrawler        CrawlErrorCode = "software_not_supported_by_crawler"
+	CrawlErrorCodeSoftwareVersionNotSupportedByCrawler CrawlErrorCode = "software_version_not_supported_by_crawler"
+	CrawlErrorCodeInternalError                        CrawlErrorCode = "internal_error"
+)
+
+func (e *CrawlErrorCode) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = CrawlErrorCode(s)
+	case string:
+		*e = CrawlErrorCode(s)
+	default:
+		return fmt.Errorf("unsupported scan type for CrawlErrorCode: %T", src)
+	}
+	return nil
+}
+
+type NullCrawlErrorCode struct {
+	CrawlErrorCode CrawlErrorCode
+	Valid          bool // Valid is true if CrawlErrorCode is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullCrawlErrorCode) Scan(value interface{}) error {
+	if value == nil {
+		ns.CrawlErrorCode, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.CrawlErrorCode.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullCrawlErrorCode) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.CrawlErrorCode), nil
+}
+
 type CrawlStatus string
 
 const (
-	CrawlStatusUnknown       CrawlStatus = "unknown"
-	CrawlStatusCompleted     CrawlStatus = "completed"
-	CrawlStatusFailed        CrawlStatus = "failed"
-	CrawlStatusBlocked       CrawlStatus = "blocked"
-	CrawlStatusTimeout       CrawlStatus = "timeout"
-	CrawlStatusInternalError CrawlStatus = "internal_error"
+	CrawlStatusUnknown   CrawlStatus = "unknown"
+	CrawlStatusCompleted CrawlStatus = "completed"
+	CrawlStatusFailed    CrawlStatus = "failed"
 )
 
 func (e *CrawlStatus) Scan(src interface{}) error {
@@ -57,56 +106,60 @@ func (ns NullCrawlStatus) Value() (driver.Value, error) {
 	return string(ns.CrawlStatus), nil
 }
 
-type ServerStatus string
+type InstanceStatus string
 
 const (
-	ServerStatusUnknown ServerStatus = "unknown"
-	ServerStatusOnline  ServerStatus = "online"
-	ServerStatusOffline ServerStatus = "offline"
+	InstanceStatusUnknown   InstanceStatus = "unknown"
+	InstanceStatusUp        InstanceStatus = "up"
+	InstanceStatusDown      InstanceStatus = "down"
+	InstanceStatusUnhealthy InstanceStatus = "unhealthy"
 )
 
-func (e *ServerStatus) Scan(src interface{}) error {
+func (e *InstanceStatus) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = ServerStatus(s)
+		*e = InstanceStatus(s)
 	case string:
-		*e = ServerStatus(s)
+		*e = InstanceStatus(s)
 	default:
-		return fmt.Errorf("unsupported scan type for ServerStatus: %T", src)
+		return fmt.Errorf("unsupported scan type for InstanceStatus: %T", src)
 	}
 	return nil
 }
 
-type NullServerStatus struct {
-	ServerStatus ServerStatus
-	Valid        bool // Valid is true if ServerStatus is not NULL
+type NullInstanceStatus struct {
+	InstanceStatus InstanceStatus
+	Valid          bool // Valid is true if InstanceStatus is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullServerStatus) Scan(value interface{}) error {
+func (ns *NullInstanceStatus) Scan(value interface{}) error {
 	if value == nil {
-		ns.ServerStatus, ns.Valid = "", false
+		ns.InstanceStatus, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.ServerStatus.Scan(value)
+	return ns.InstanceStatus.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullServerStatus) Value() (driver.Value, error) {
+func (ns NullInstanceStatus) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.ServerStatus), nil
+	return string(ns.InstanceStatus), nil
 }
 
 type Crawl struct {
 	ID                pgtype.UUID
-	ServerID          pgtype.UUID
+	InstanceID        pgtype.UUID
 	Status            CrawlStatus
+	ErrorCode         NullCrawlErrorCode
 	ErrorMsg          pgtype.Text
 	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
 	SoftwareName      pgtype.Text
+	SoftwareVersion   pgtype.Text
 	NumberOfPeers     pgtype.Int4
 	OpenRegistrations pgtype.Bool
 	TotalUsers        pgtype.Int4
@@ -114,20 +167,27 @@ type Crawl struct {
 	ActiveMonth       pgtype.Int4
 	LocalPosts        pgtype.Int4
 	LocalComments     pgtype.Int4
+	RawNodeinfo       []byte
+	Addresses         []netip.Addr
 }
 
-type PeeringRelationship struct {
-	ServerID pgtype.UUID
-	PeerID   pgtype.UUID
+type CrawlError struct {
+	ErrorCode   CrawlErrorCode
+	Description string
 }
 
-type Server struct {
+type Instance struct {
 	ID           pgtype.UUID
 	Domain       string
-	Status       ServerStatus
+	Status       InstanceStatus
 	CreatedAt    pgtype.Timestamptz
 	DeletedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	SoftwareName pgtype.Text
 	LastCrawlID  pgtype.UUID
+}
+
+type PeeringRelationship struct {
+	InstanceID pgtype.UUID
+	PeerID     pgtype.UUID
 }

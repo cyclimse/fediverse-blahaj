@@ -27,7 +27,7 @@ func main() {
 	// Add some middleware
 	// e.Use(middleware.Recover())
 	e.Use(middleware.Timeout())
-
+	e.Use(middleware.Logger())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		// TODO: Change this to the actual domain
 		// This is only for development

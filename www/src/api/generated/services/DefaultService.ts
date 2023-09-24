@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { Crawl } from '../models/Crawl';
 import type { Error } from '../models/Error';
-import type { Server } from '../models/Server';
+import type { Instance } from '../models/Instance';
 
 import type { CancelablePromise } from '../core/CancelablePromise';
 import type { BaseHttpRequest } from '../core/BaseHttpRequest';
@@ -14,27 +14,27 @@ export class DefaultService {
     constructor(public readonly httpRequest: BaseHttpRequest) {}
 
     /**
-     * List all servers
+     * List all instances
      * @param software filter by software name.
      * @param page page number of results to return
      * @param perPage number of results to return per page
-     * @returns any paginated array of servers
+     * @returns any paginated array of instances
      * @returns Error unexpected error
      * @throws ApiError
      */
-    public listServers(
+    public listInstances(
         software?: string,
         page: number = 1,
         perPage: number = 30,
     ): CancelablePromise<{
-        results: Array<Server>;
+        results: Array<Instance>;
         total: number;
         page: number;
         per_page: number;
     } | Error> {
         return this.httpRequest.request({
             method: 'GET',
-            url: '/servers',
+            url: '/instances',
             query: {
                 'software': software,
                 'page': page,
@@ -44,18 +44,18 @@ export class DefaultService {
     }
 
     /**
-     * Info for a specific server
-     * @param id ID of the server to fetch
-     * @returns Server server response
+     * Info for a specific instance
+     * @param id ID of the instance to fetch
+     * @returns Instance instance response
      * @returns Error unexpected error
      * @throws ApiError
      */
-    public getServerById(
+    public getInstanceById(
         id: string,
-    ): CancelablePromise<Server | Error> {
+    ): CancelablePromise<Instance | Error> {
         return this.httpRequest.request({
             method: 'GET',
-            url: '/servers/{id}',
+            url: '/instances/{id}',
             path: {
                 'id': id,
             },
@@ -63,15 +63,15 @@ export class DefaultService {
     }
 
     /**
-     * List all crawls for a server
-     * @param id ID of the server to fetch
+     * List all crawls for a instance
+     * @param id ID of the instance to fetch
      * @param page page number of results to return
      * @param perPage number of results to return per page
      * @returns any paginated array of crawls
      * @returns Error unexpected error
      * @throws ApiError
      */
-    public listCrawlsForServer(
+    public listCrawlsForInstance(
         id: string,
         page: number = 1,
         perPage: number = 30,
@@ -83,7 +83,7 @@ export class DefaultService {
     } | Error> {
         return this.httpRequest.request({
             method: 'GET',
-            url: '/servers/{id}/crawls',
+            url: '/instances/{id}/crawls',
             path: {
                 'id': id,
             },

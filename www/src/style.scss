@@ -22,4 +22,39 @@ $primary-invert: $pink-invert;
 // 4. Import the rest of Bulma
 */
 
+@import url('https://fonts.googleapis.com/css?family=Poppins:400,600,700');
+@import url('https://fonts.googleapis.com/css?family=Fraunces:400,600,700');
+
+$cosmic-latte: #f7f3e3;
+$too-much-milk: #faf7ef;
+
+$dark-green: #ef2d56;
+$denim: #275DAD;
+
+$dark-brownish-grey: #171219;
+$light-brownish-grey: #8b8489;
+
+// Update Bulma's global variables
+$family-primary: "Poppins", sans-serif;
+$family-secondary: "Fraunces", sans-serif;
+
+$white: $cosmic-latte;
+$white-bis: $too-much-milk;
+$white-ter: $too-much-milk;
+
+$grey-darker: $dark-brownish-grey;
+$grey-dark: $dark-brownish-grey;
+$grey: lighten($light-brownish-grey, 30%); 
+
+$primary: $denim;
+$link: $dark-green;
+
+$border: $black;
+$radius: 0px;
+
+// Change some specific elements
+
+// Navbar
+$navbar-height: 4.5rem;
+
 @import "../node_modules/bulma/bulma";

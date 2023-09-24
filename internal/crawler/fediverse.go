@@ -6,44 +6,45 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/cyclimse/fediverse-blahaj/internal/models"
 	nodeinfo "github.com/cyclimse/fediverse-blahaj/pkg/nodeinfo/unversioned"
 	"github.com/hashicorp/go-retryablehttp"
 )
 
-func (c *Crawler) GetPeers(ctx context.Context, url string, n nodeinfo.Nodeinfo) ([]string, CrawlError) {
+func (c *Crawler) GetPeers(ctx context.Context, url string, n nodeinfo.Nodeinfo) ([]string, models.CrawlErrCode, error) {
 	if n == nil {
-		return nil, newCrawlInternalError(fmt.Errorf("nodeinfo is nil"))
+		return nil, models.CrawlErrCodeInternalError, fmt.Errorf("nodeinfo is nil")
 	}
-	switch n.GetSoftwareName() {
+	switch n.SoftwareName() {
 	case "mastodon":
 		return c.GetPeersMastodon(ctx, url, n)
 	}
-	return nil, errUnsupportedSoftware
+	return nil, models.CrawlErrCodeSoftwareNotSupportedByCrawler, fmt.Errorf("software not supported by crawler: %s", n.SoftwareName())
 }
 
-func (c *Crawler) GetPeersMastodon(ctx context.Context, url string, n nodeinfo.Nodeinfo) ([]string, CrawlError) {
+func (c *Crawler) GetPeersMastodon(ctx context.Context, url string, n nodeinfo.Nodeinfo) ([]string, models.CrawlErrCode, error) {
 	r, err := retryablehttp.NewRequest("GET", url+"/api/v1/instance/peers", nil)
 	if err != nil {
-		return nil, newCrawlInternalError(err)
+		return nil, models.CrawlErrCodeInternalError, err
 	}
 
 	r.Header.Set("User-Agent", c.userAgent)
 
 	resp, err := c.client.Do(r.WithContext(ctx))
 	if err != nil {
-		return nil, errNetworkError.Wrap(err)
+		return nil, models.CrawlErrCodeUnreachable, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, errNetworkError.Wrap(fmt.Errorf("unexpected status code: %d", resp.StatusCode))
+		return nil, models.CrawlErrCodeUnreachable, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	var peers []string
 	err = json.NewDecoder(resp.Body).Decode(&peers)
 	if err != nil {
-		return nil, newCrawlInternalError(err)
+		return nil, models.CrawlErrCodeInvalidJSON, err
 	}
 
-	return peers, nil
+	return peers, models.CrawlErrCodeUnknown, nil
 }

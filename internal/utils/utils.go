@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"errors"
+
 	"golang.org/x/exp/constraints"
 )
 
@@ -30,4 +32,19 @@ func ValToPtr[T any](val T, valid bool) *T {
 		return nil
 	}
 	return &val
+}
+
+func ConvertIntPtrToInt32Ptr[T constraints.Integer](i *T) *int32 {
+	if i == nil {
+		return nil
+	}
+	v := int32(*i)
+	return &v
+}
+
+func NullableStringToError(s string, valid bool) error {
+	if !valid {
+		return nil
+	}
+	return errors.New(s)
 }

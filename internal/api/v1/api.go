@@ -24,33 +24,36 @@ import (
 
 // Defines values for CrawlStatus.
 const (
-	Failed   CrawlStatus = "failed"
-	Finished CrawlStatus = "finished"
-	Pending  CrawlStatus = "pending"
-	Running  CrawlStatus = "running"
+	CrawlStatusCompleted CrawlStatus = "completed"
+	CrawlStatusFailed    CrawlStatus = "failed"
+	CrawlStatusUnknown   CrawlStatus = "unknown"
 )
 
-// Defines values for ServerStatus.
+// Defines values for InstanceStatus.
 const (
-	Offline ServerStatus = "offline"
-	Online  ServerStatus = "online"
-	Unknown ServerStatus = "unknown"
+	InstanceStatusDown      InstanceStatus = "down"
+	InstanceStatusUnhealthy InstanceStatus = "unhealthy"
+	InstanceStatusUnknown   InstanceStatus = "unknown"
+	InstanceStatusUp        InstanceStatus = "up"
 )
 
 // Crawl defines model for Crawl.
 type Crawl struct {
-	ActiveUsersHalfYear *int32             `json:"active_users_half_year,omitempty"`
-	ActiveUsersMonth    *int32             `json:"active_users_month,omitempty"`
-	Error               *string            `json:"error,omitempty"`
-	FinishedAt          time.Time          `json:"finished_at"`
-	Id                  openapi_types.UUID `json:"id"`
-	LocalComments       *int32             `json:"local_comments,omitempty"`
-	LocalPosts          *int32             `json:"local_posts,omitempty"`
-	NumberOfPeers       *int32             `json:"number_of_peers,omitempty"`
-	ServerId            openapi_types.UUID `json:"server_id"`
-	StartedAt           time.Time          `json:"started_at"`
-	Status              CrawlStatus        `json:"status"`
-	TotalUsers          *int32             `json:"total_users,omitempty"`
+	ActiveUsersHalfYear  *int32                  `json:"active_users_half_year,omitempty"`
+	ActiveUsersMonth     *int32                  `json:"active_users_month,omitempty"`
+	DurationSeconds      float64                 `json:"duration_seconds"`
+	ErrorCode            *string                 `json:"errorCode,omitempty"`
+	ErrorCodeDescription *string                 `json:"errorCodeDescription,omitempty"`
+	FinishedAt           time.Time               `json:"finished_at"`
+	Id                   openapi_types.UUID      `json:"id"`
+	InstanceId           openapi_types.UUID      `json:"instance_id"`
+	LocalComments        *int32                  `json:"local_comments,omitempty"`
+	LocalPosts           *int32                  `json:"local_posts,omitempty"`
+	NumberOfPeers        *int32                  `json:"number_of_peers,omitempty"`
+	RawNodeinfo          *map[string]interface{} `json:"raw_nodeinfo,omitempty"`
+	StartedAt            time.Time               `json:"started_at"`
+	Status               CrawlStatus             `json:"status"`
+	TotalUsers           *int32                  `json:"total_users,omitempty"`
 }
 
 // CrawlStatus defines model for Crawl.Status.
@@ -62,8 +65,8 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-// Server defines model for Server.
-type Server struct {
+// Instance defines model for Instance.
+type Instance struct {
 	ActiveUsersHalfYear *int32             `json:"active_users_half_year,omitempty"`
 	ActiveUsersMonth    *int32             `json:"active_users_month,omitempty"`
 	Description         *string            `json:"description,omitempty"`
@@ -74,16 +77,16 @@ type Server struct {
 	NumberOfPeers       *int32             `json:"number_of_peers,omitempty"`
 	OpenRegistrations   *bool              `json:"open_registrations,omitempty"`
 	Software            *string            `json:"software,omitempty"`
-	Status              ServerStatus       `json:"status"`
+	Status              InstanceStatus     `json:"status"`
 	TotalUsers          *int32             `json:"total_users,omitempty"`
 	Version             *string            `json:"version,omitempty"`
 }
 
-// ServerStatus defines model for Server.Status.
-type ServerStatus string
+// InstanceStatus defines model for Instance.Status.
+type InstanceStatus string
 
-// ListServersParams defines parameters for ListServers.
-type ListServersParams struct {
+// ListInstancesParams defines parameters for ListInstances.
+type ListInstancesParams struct {
 	// Software filter by software name.
 	Software *string `form:"software,omitempty" json:"software,omitempty"`
 
@@ -94,8 +97,8 @@ type ListServersParams struct {
 	PerPage *int32 `form:"per_page,omitempty" json:"per_page,omitempty"`
 }
 
-// ListCrawlsForServerParams defines parameters for ListCrawlsForServer.
-type ListCrawlsForServerParams struct {
+// ListCrawlsForInstanceParams defines parameters for ListCrawlsForInstance.
+type ListCrawlsForInstanceParams struct {
 	// Page page number of results to return
 	Page *int32 `form:"page,omitempty" json:"page,omitempty"`
 
@@ -105,15 +108,15 @@ type ListCrawlsForServerParams struct {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// List all servers
-	// (GET /servers)
-	ListServers(ctx echo.Context, params ListServersParams) error
-	// Info for a specific server
-	// (GET /servers/{id})
-	GetServerByID(ctx echo.Context, id openapi_types.UUID) error
-	// List all crawls for a server
-	// (GET /servers/{id}/crawls)
-	ListCrawlsForServer(ctx echo.Context, id openapi_types.UUID, params ListCrawlsForServerParams) error
+	// List all instances
+	// (GET /instances)
+	ListInstances(ctx echo.Context, params ListInstancesParams) error
+	// Info for a specific instance
+	// (GET /instances/{id})
+	GetInstanceByID(ctx echo.Context, id openapi_types.UUID) error
+	// List all crawls for a instance
+	// (GET /instances/{id}/crawls)
+	ListCrawlsForInstance(ctx echo.Context, id openapi_types.UUID, params ListCrawlsForInstanceParams) error
 }
 
 // ServerInterfaceWrapper converts echo contexts to parameters.
@@ -121,12 +124,12 @@ type ServerInterfaceWrapper struct {
 	Handler ServerInterface
 }
 
-// ListServers converts echo context to params.
-func (w *ServerInterfaceWrapper) ListServers(ctx echo.Context) error {
+// ListInstances converts echo context to params.
+func (w *ServerInterfaceWrapper) ListInstances(ctx echo.Context) error {
 	var err error
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params ListServersParams
+	var params ListInstancesParams
 	// ------------- Optional query parameter "software" -------------
 
 	err = runtime.BindQueryParameter("form", true, false, "software", ctx.QueryParams(), &params.Software)
@@ -149,12 +152,12 @@ func (w *ServerInterfaceWrapper) ListServers(ctx echo.Context) error {
 	}
 
 	// Invoke the callback with all the unmarshalled arguments
-	err = w.Handler.ListServers(ctx, params)
+	err = w.Handler.ListInstances(ctx, params)
 	return err
 }
 
-// GetServerByID converts echo context to params.
-func (w *ServerInterfaceWrapper) GetServerByID(ctx echo.Context) error {
+// GetInstanceByID converts echo context to params.
+func (w *ServerInterfaceWrapper) GetInstanceByID(ctx echo.Context) error {
 	var err error
 	// ------------- Path parameter "id" -------------
 	var id openapi_types.UUID
@@ -165,12 +168,12 @@ func (w *ServerInterfaceWrapper) GetServerByID(ctx echo.Context) error {
 	}
 
 	// Invoke the callback with all the unmarshalled arguments
-	err = w.Handler.GetServerByID(ctx, id)
+	err = w.Handler.GetInstanceByID(ctx, id)
 	return err
 }
 
-// ListCrawlsForServer converts echo context to params.
-func (w *ServerInterfaceWrapper) ListCrawlsForServer(ctx echo.Context) error {
+// ListCrawlsForInstance converts echo context to params.
+func (w *ServerInterfaceWrapper) ListCrawlsForInstance(ctx echo.Context) error {
 	var err error
 	// ------------- Path parameter "id" -------------
 	var id openapi_types.UUID
@@ -181,7 +184,7 @@ func (w *ServerInterfaceWrapper) ListCrawlsForServer(ctx echo.Context) error {
 	}
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params ListCrawlsForServerParams
+	var params ListCrawlsForInstanceParams
 	// ------------- Optional query parameter "page" -------------
 
 	err = runtime.BindQueryParameter("form", true, false, "page", ctx.QueryParams(), &params.Page)
@@ -197,7 +200,7 @@ func (w *ServerInterfaceWrapper) ListCrawlsForServer(ctx echo.Context) error {
 	}
 
 	// Invoke the callback with all the unmarshalled arguments
-	err = w.Handler.ListCrawlsForServer(ctx, id, params)
+	err = w.Handler.ListCrawlsForInstance(ctx, id, params)
 	return err
 }
 
@@ -229,104 +232,104 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 		Handler: si,
 	}
 
-	router.GET(baseURL+"/servers", wrapper.ListServers)
-	router.GET(baseURL+"/servers/:id", wrapper.GetServerByID)
-	router.GET(baseURL+"/servers/:id/crawls", wrapper.ListCrawlsForServer)
+	router.GET(baseURL+"/instances", wrapper.ListInstances)
+	router.GET(baseURL+"/instances/:id", wrapper.GetInstanceByID)
+	router.GET(baseURL+"/instances/:id/crawls", wrapper.ListCrawlsForInstance)
 
 }
 
-type ListServersRequestObject struct {
-	Params ListServersParams
+type ListInstancesRequestObject struct {
+	Params ListInstancesParams
 }
 
-type ListServersResponseObject interface {
-	VisitListServersResponse(w http.ResponseWriter) error
+type ListInstancesResponseObject interface {
+	VisitListInstancesResponse(w http.ResponseWriter) error
 }
 
-type ListServers200JSONResponse struct {
-	Page    int32    `json:"page"`
-	PerPage int32    `json:"per_page"`
-	Results []Server `json:"results"`
-	Total   int64    `json:"total"`
+type ListInstances200JSONResponse struct {
+	Page    int32      `json:"page"`
+	PerPage int32      `json:"per_page"`
+	Results []Instance `json:"results"`
+	Total   int64      `json:"total"`
 }
 
-func (response ListServers200JSONResponse) VisitListServersResponse(w http.ResponseWriter) error {
+func (response ListInstances200JSONResponse) VisitListInstancesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
-type ListServersdefaultJSONResponse struct {
+type ListInstancesdefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
 }
 
-func (response ListServersdefaultJSONResponse) VisitListServersResponse(w http.ResponseWriter) error {
+func (response ListInstancesdefaultJSONResponse) VisitListInstancesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
-type GetServerByIDRequestObject struct {
+type GetInstanceByIDRequestObject struct {
 	Id openapi_types.UUID `json:"id"`
 }
 
-type GetServerByIDResponseObject interface {
-	VisitGetServerByIDResponse(w http.ResponseWriter) error
+type GetInstanceByIDResponseObject interface {
+	VisitGetInstanceByIDResponse(w http.ResponseWriter) error
 }
 
-type GetServerByID200JSONResponse Server
+type GetInstanceByID200JSONResponse Instance
 
-func (response GetServerByID200JSONResponse) VisitGetServerByIDResponse(w http.ResponseWriter) error {
+func (response GetInstanceByID200JSONResponse) VisitGetInstanceByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
-type GetServerByIDdefaultJSONResponse struct {
+type GetInstanceByIDdefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
 }
 
-func (response GetServerByIDdefaultJSONResponse) VisitGetServerByIDResponse(w http.ResponseWriter) error {
+func (response GetInstanceByIDdefaultJSONResponse) VisitGetInstanceByIDResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
-type ListCrawlsForServerRequestObject struct {
+type ListCrawlsForInstanceRequestObject struct {
 	Id     openapi_types.UUID `json:"id"`
-	Params ListCrawlsForServerParams
+	Params ListCrawlsForInstanceParams
 }
 
-type ListCrawlsForServerResponseObject interface {
-	VisitListCrawlsForServerResponse(w http.ResponseWriter) error
+type ListCrawlsForInstanceResponseObject interface {
+	VisitListCrawlsForInstanceResponse(w http.ResponseWriter) error
 }
 
-type ListCrawlsForServer200JSONResponse struct {
+type ListCrawlsForInstance200JSONResponse struct {
 	Page    int32   `json:"page"`
 	PerPage int32   `json:"per_page"`
 	Results []Crawl `json:"results"`
 	Total   int64   `json:"total"`
 }
 
-func (response ListCrawlsForServer200JSONResponse) VisitListCrawlsForServerResponse(w http.ResponseWriter) error {
+func (response ListCrawlsForInstance200JSONResponse) VisitListCrawlsForInstanceResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
 
-type ListCrawlsForServerdefaultJSONResponse struct {
+type ListCrawlsForInstancedefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
 }
 
-func (response ListCrawlsForServerdefaultJSONResponse) VisitListCrawlsForServerResponse(w http.ResponseWriter) error {
+func (response ListCrawlsForInstancedefaultJSONResponse) VisitListCrawlsForInstanceResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
@@ -335,15 +338,15 @@ func (response ListCrawlsForServerdefaultJSONResponse) VisitListCrawlsForServerR
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// List all servers
-	// (GET /servers)
-	ListServers(ctx context.Context, request ListServersRequestObject) (ListServersResponseObject, error)
-	// Info for a specific server
-	// (GET /servers/{id})
-	GetServerByID(ctx context.Context, request GetServerByIDRequestObject) (GetServerByIDResponseObject, error)
-	// List all crawls for a server
-	// (GET /servers/{id}/crawls)
-	ListCrawlsForServer(ctx context.Context, request ListCrawlsForServerRequestObject) (ListCrawlsForServerResponseObject, error)
+	// List all instances
+	// (GET /instances)
+	ListInstances(ctx context.Context, request ListInstancesRequestObject) (ListInstancesResponseObject, error)
+	// Info for a specific instance
+	// (GET /instances/{id})
+	GetInstanceByID(ctx context.Context, request GetInstanceByIDRequestObject) (GetInstanceByIDResponseObject, error)
+	// List all crawls for a instance
+	// (GET /instances/{id}/crawls)
+	ListCrawlsForInstance(ctx context.Context, request ListCrawlsForInstanceRequestObject) (ListCrawlsForInstanceResponseObject, error)
 }
 
 type StrictHandlerFunc = runtime.StrictEchoHandlerFunc
@@ -358,76 +361,76 @@ type strictHandler struct {
 	middlewares []StrictMiddlewareFunc
 }
 
-// ListServers operation middleware
-func (sh *strictHandler) ListServers(ctx echo.Context, params ListServersParams) error {
-	var request ListServersRequestObject
+// ListInstances operation middleware
+func (sh *strictHandler) ListInstances(ctx echo.Context, params ListInstancesParams) error {
+	var request ListInstancesRequestObject
 
 	request.Params = params
 
 	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListServers(ctx.Request().Context(), request.(ListServersRequestObject))
+		return sh.ssi.ListInstances(ctx.Request().Context(), request.(ListInstancesRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListServers")
+		handler = middleware(handler, "ListInstances")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		return err
-	} else if validResponse, ok := response.(ListServersResponseObject); ok {
-		return validResponse.VisitListServersResponse(ctx.Response())
+	} else if validResponse, ok := response.(ListInstancesResponseObject); ok {
+		return validResponse.VisitListInstancesResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("Unexpected response type: %T", response)
 	}
 	return nil
 }
 
-// GetServerByID operation middleware
-func (sh *strictHandler) GetServerByID(ctx echo.Context, id openapi_types.UUID) error {
-	var request GetServerByIDRequestObject
+// GetInstanceByID operation middleware
+func (sh *strictHandler) GetInstanceByID(ctx echo.Context, id openapi_types.UUID) error {
+	var request GetInstanceByIDRequestObject
 
 	request.Id = id
 
 	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.GetServerByID(ctx.Request().Context(), request.(GetServerByIDRequestObject))
+		return sh.ssi.GetInstanceByID(ctx.Request().Context(), request.(GetInstanceByIDRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetServerByID")
+		handler = middleware(handler, "GetInstanceByID")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		return err
-	} else if validResponse, ok := response.(GetServerByIDResponseObject); ok {
-		return validResponse.VisitGetServerByIDResponse(ctx.Response())
+	} else if validResponse, ok := response.(GetInstanceByIDResponseObject); ok {
+		return validResponse.VisitGetInstanceByIDResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("Unexpected response type: %T", response)
 	}
 	return nil
 }
 
-// ListCrawlsForServer operation middleware
-func (sh *strictHandler) ListCrawlsForServer(ctx echo.Context, id openapi_types.UUID, params ListCrawlsForServerParams) error {
-	var request ListCrawlsForServerRequestObject
+// ListCrawlsForInstance operation middleware
+func (sh *strictHandler) ListCrawlsForInstance(ctx echo.Context, id openapi_types.UUID, params ListCrawlsForInstanceParams) error {
+	var request ListCrawlsForInstanceRequestObject
 
 	request.Id = id
 	request.Params = params
 
 	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.ListCrawlsForServer(ctx.Request().Context(), request.(ListCrawlsForServerRequestObject))
+		return sh.ssi.ListCrawlsForInstance(ctx.Request().Context(), request.(ListCrawlsForInstanceRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListCrawlsForServer")
+		handler = middleware(handler, "ListCrawlsForInstance")
 	}
 
 	response, err := handler(ctx, request)
 
 	if err != nil {
 		return err
-	} else if validResponse, ok := response.(ListCrawlsForServerResponseObject); ok {
-		return validResponse.VisitListCrawlsForServerResponse(ctx.Response())
+	} else if validResponse, ok := response.(ListCrawlsForInstanceResponseObject); ok {
+		return validResponse.VisitListCrawlsForInstanceResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("Unexpected response type: %T", response)
 	}
@@ -437,24 +440,25 @@ func (sh *strictHandler) ListCrawlsForServer(ctx echo.Context, id openapi_types.
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"qXWKMhKS3e7vAAAA//92k4A/EBMAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

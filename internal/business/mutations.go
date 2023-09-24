@@ -10,70 +10,67 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (b *Business) AddServer(ctx context.Context, server models.FediverseServer) (db.Server, error) {
-	if server.Domain == "" {
-		return db.Server{}, fmt.Errorf("domain is empty")
+func (b *Business) AddInstance(ctx context.Context, domain string, software *string) (db.Instance, error) {
+	if domain == "" {
+		return db.Instance{}, fmt.Errorf("domain is empty")
 	}
 
-	s, error := b.queries.CreateServer(ctx, db.CreateServerParams{
-		Domain:       server.Domain,
-		SoftwareName: pgtype.Text{String: utils.StringPtrToVal(server.SoftwareName), Valid: server.SoftwareName != nil},
+	s, err := b.queries.CreateInstance(ctx, db.CreateInstanceParams{
+		Domain:       domain,
+		SoftwareName: pgtype.Text{String: utils.StringPtrToVal(software), Valid: software != nil},
 	})
-	if error != nil {
-		return db.Server{}, error
+	if err != nil {
+		return db.Instance{}, err
 	}
 	return s, nil
 }
 
-func (b *Business) AddFailedCrawlToServer(ctx context.Context, res models.FediverseServer, s db.Server) error {
-	if res.CrawlErr == nil {
-		return fmt.Errorf("crawl result has no error")
+func (b *Business) AddCrawlToFediverseInstance(ctx context.Context, crawl models.Crawl, instance db.Instance) error {
+	params := db.CreateCrawlParams{
+		InstanceID: instance.ID,
+
+		Status: db.CrawlStatus(crawl.Status),
+
+		StartedAt:  pgtype.Timestamptz{Time: crawl.StartedAt, Valid: true},
+		FinishedAt: pgtype.Timestamptz{Time: crawl.FinishedAt, Valid: true},
+
+		SoftwareName:    pgtype.Text{String: utils.StringPtrToVal(crawl.SoftwareName), Valid: crawl.SoftwareName != nil},
+		SoftwareVersion: pgtype.Text{String: utils.StringPtrToVal(crawl.SoftwareVersion), Valid: crawl.SoftwareVersion != nil},
+
+		NumberOfPeers:     pgtype.Int4{Int32: int32(utils.IntPtrToVal(crawl.NumberOfPeers)), Valid: crawl.NumberOfPeers != nil},
+		OpenRegistrations: pgtype.Bool{Bool: utils.BoolPtrToVal(crawl.OpenRegistrations), Valid: crawl.OpenRegistrations != nil},
+		TotalUsers:        pgtype.Int4{Int32: int32(utils.IntPtrToVal(crawl.TotalUsers)), Valid: crawl.TotalUsers != nil},
+		ActiveHalfYear:    pgtype.Int4{Int32: int32(utils.IntPtrToVal(crawl.ActiveHalfyear)), Valid: crawl.ActiveHalfyear != nil},
+		ActiveMonth:       pgtype.Int4{Int32: int32(utils.IntPtrToVal(crawl.ActiveMonth)), Valid: crawl.ActiveMonth != nil},
+		LocalPosts:        pgtype.Int4{Int32: int32(utils.IntPtrToVal(crawl.LocalPosts)), Valid: crawl.LocalPosts != nil},
+		LocalComments:     pgtype.Int4{Int32: int32(utils.IntPtrToVal(crawl.LocalComments)), Valid: crawl.LocalComments != nil},
+
+		RawNodeinfo: []byte(crawl.RawNodeinfo),
+		Addresses:   crawl.Addresses,
 	}
 
-	c, err := b.queries.CreateFailedCrawl(ctx, db.CreateFailedCrawlParams{
-		ServerID: s.ID,
-		Status:   db.CrawlStatus(res.CrawlStatus),
-		// res.CrawlErr is not nil, so we can safely use it
-		ErrorMsg: pgtype.Text{String: res.CrawlErr.Error(), Valid: true},
-	})
+	instanceStatus := db.InstanceStatusUp
+	if crawl.Err != nil {
+		params.ErrorMsg = pgtype.Text{String: crawl.Err.Error(), Valid: true}
+		params.ErrorCode = db.NullCrawlErrorCode{CrawlErrorCode: db.CrawlErrorCode(crawl.Err.Code), Valid: true}
+		instanceStatus = db.InstanceStatusDown
+	}
+
+	c, err := b.queries.CreateCrawl(ctx, params)
 	if err != nil {
 		return err
 	}
 
 	// set the latest crawl_id on the server
-	err = b.queries.UpdateServerLastCrawlID(ctx, db.UpdateServerLastCrawlIDParams{
-		LastCrawlID: c.ID,
-		// TODO: maybe we should not set it to offline if it is a temporary error
-		// do this asynchroniously in a cronjob
-		Status: db.ServerStatusOffline,
-		ID:     s.ID,
-	})
-	if err != nil {
-		return err
-	}
+	err = b.queries.UpdateInstanceFromLastCrawl(ctx, db.UpdateInstanceFromLastCrawlParams{
+		ID:     instance.ID,
+		Status: instanceStatus,
 
-	return nil
-}
+		// While this is considered immutable, it is not enforced by the db.
+		// It's important to update it here because when creating instances in bulk,
+		// the software name is not known yet and therefore not set.
+		SoftwareName: pgtype.Text{String: utils.StringPtrToVal(crawl.SoftwareName), Valid: crawl.SoftwareName != nil},
 
-func (b *Business) AddCompletedCrawlToServer(ctx context.Context, res models.FediverseServer, s db.Server) error {
-	c, err := b.queries.CreateCompletedCrawl(ctx, db.CreateCompletedCrawlParams{
-		ServerID:          s.ID,
-		NumberOfPeers:     pgtype.Int4{Int32: int32(utils.IntPtrToVal(res.NumberOfPeers)), Valid: res.NumberOfPeers != nil},
-		OpenRegistrations: pgtype.Bool{Bool: utils.BoolPtrToVal(res.OpenRegistrations), Valid: res.OpenRegistrations != nil},
-		TotalUsers:        pgtype.Int4{Int32: int32(utils.IntPtrToVal(res.TotalUsers)), Valid: res.TotalUsers != nil},
-		ActiveHalfYear:    pgtype.Int4{Int32: int32(utils.IntPtrToVal(res.ActiveHalfyear)), Valid: res.ActiveHalfyear != nil},
-		ActiveMonth:       pgtype.Int4{Int32: int32(utils.IntPtrToVal(res.ActiveMonth)), Valid: res.ActiveMonth != nil},
-		LocalPosts:        pgtype.Int4{Int32: int32(utils.IntPtrToVal(res.LocalPosts)), Valid: res.LocalPosts != nil},
-		LocalComments:     pgtype.Int4{Int32: int32(utils.IntPtrToVal(res.LocalComments)), Valid: res.LocalComments != nil},
-	})
-	if err != nil {
-		return err
-	}
-
-	// set the latest crawl_id on the server
-	err = b.queries.UpdateServerLastCrawlID(ctx, db.UpdateServerLastCrawlIDParams{
-		ID:          s.ID,
-		Status:      db.ServerStatusOnline,
 		LastCrawlID: c.ID,
 	})
 	if err != nil {
@@ -89,15 +86,16 @@ func (b *Business) AddCompletedCrawlToServer(ctx context.Context, res models.Fed
 	qtx := b.queries.WithTx(tx)
 
 	// add the peers if they are not already in the db
-	err = qtx.CreateServersFromDomainList(ctx, res.Peers)
+	// TODO: filter blacklisted domains
+	err = qtx.CreateInstancesFromDomainList(ctx, crawl.Peers)
 	if err != nil {
 		return err
 	}
 
 	// update the relations between the server and the peers
 	err = qtx.UpdatePeeringRelationships(ctx, db.UpdatePeeringRelationshipsParams{
-		ServerID: s.ID,
-		Domains:  res.Peers,
+		InstanceID: instance.ID,
+		Domains:    crawl.Peers,
 	})
 	if err != nil {
 		return err

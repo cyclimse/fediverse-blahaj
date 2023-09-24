@@ -2,8 +2,9 @@ package business
 
 import (
 	"context"
+	"time"
 
-	"golang.org/x/exp/slog"
+	"log/slog"
 
 	"github.com/cyclimse/fediverse-blahaj/internal/db"
 	"github.com/cyclimse/fediverse-blahaj/internal/models"
@@ -13,50 +14,67 @@ import (
 
 func New(conn *pgxpool.Pool) *Business {
 	return &Business{
-		conn:    conn,
-		queries: db.New(conn),
+		conn:                  conn,
+		queries:               db.New(conn),
+		errorCodeDescriptions: newCachedErrorCodeDescriptions(),
 	}
 }
 
 type Business struct {
 	conn    *pgxpool.Pool
 	queries *db.Queries
+
+	errorCodeDescriptions cachedErrorCodeDescriptions
+}
+
+func newCachedErrorCodeDescriptions() cachedErrorCodeDescriptions {
+	expireAfter := time.Hour
+	return cachedErrorCodeDescriptions{
+		Descriptions: make(map[models.CrawlErrCode]string),
+		LastUpdate:   time.Now().Add(-expireAfter),
+		// in practice, the descriptions should not change
+		// however, we still want to be able to change them
+		// without having to restart the server
+		ExpireAfter: expireAfter,
+	}
+}
+
+type cachedErrorCodeDescriptions struct {
+	Descriptions map[models.CrawlErrCode]string
+	LastUpdate   time.Time
+	ExpireAfter  time.Duration
 }
 
 // Run runs the business logic.
 // Handles the results from the crawler, but is not aware of the crawler logic.
-func (b *Business) Run(ctx context.Context, servers chan models.FediverseServer) error {
+func (b *Business) Run(ctx context.Context, crawls chan models.Crawl) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case server, ok := <-servers:
+		case crawl, ok := <-crawls:
 			if !ok {
 				return nil
 			}
-			slog.InfoCtx(ctx, "received server", "server", server)
-			// check if the server is already in the db
-			var s db.Server
-			s, err := b.queries.GetSeverByDomain(ctx, server.Domain)
+			slog.InfoContext(ctx, "received crawl", "crawl", crawl.Domain, "status", crawl.Status)
+			// check if the instance is already in the db
+			var instance db.Instance
+			instance, err := b.queries.GetInstanceByDomain(ctx, crawl.Domain)
 			if err != nil {
 				if err != pgx.ErrNoRows {
 					return err
 				}
-				// server is not in the db, add it
-				s, err = b.AddServer(ctx, server)
+				// instance is not in the db, add it
+				instance, err = b.AddInstance(ctx, crawl.Domain, crawl.SoftwareName)
 				if err != nil {
-					slog.ErrorCtx(ctx, "failed to add server", "error", err)
+					slog.ErrorContext(ctx, "failed to add instance", "error", err)
 					return err
 				}
 			}
-			// add the crawl to the server
-			if server.CrawlErr != nil {
-				err = b.AddFailedCrawlToServer(ctx, server, s)
-			} else {
-				err = b.AddCompletedCrawlToServer(ctx, server, s)
-			}
+			// add the crawl to the instance
+			err = b.AddCrawlToFediverseInstance(ctx, crawl, instance)
 			if err != nil {
-				slog.ErrorCtx(ctx, "failed to add crawl to server", "error", err)
+				slog.ErrorContext(ctx, "failed to add crawl to instance", "error", err)
 				return err
 			}
 		}

@@ -3,10 +3,10 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export type Server = {
+export type Instance = {
     id: string;
     domain: string;
-    status: Server.status;
+    status: Instance.status;
     description?: string;
     software?: string;
     version?: string;
@@ -19,12 +19,14 @@ export type Server = {
     local_comments?: number;
 };
 
-export namespace Server {
+export namespace Instance {
 
     export enum status {
-        ACTIVE = 'active',
-        INACTIVE = 'inactive',
         UNKNOWN = 'unknown',
+        UP = 'up',
+        DOWN = 'down',
+        UNHEALTHY = 'unhealthy',
+        BLOCKED = 'blocked',
     }
 
 

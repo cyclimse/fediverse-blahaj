@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/cyclimse/fediverse-blahaj/internal/crawler"
 	"github.com/cyclimse/fediverse-blahaj/internal/models"
-	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -41,7 +42,7 @@ type crawlerIdKey struct{}
 
 // Crawl crawls the fediverse and streams the results to the results channel.
 // It returns an error if the context is exceeded.
-func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseServer) error {
+func (o *Orchestrator) Crawl(ctx context.Context, results chan models.Crawl) error {
 	crawlers := make([]*crawler.Crawler, o.numCrawlers)
 
 	for i := 0; i < o.numCrawlers; i++ {
@@ -67,7 +68,7 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseS
 					crawlCtx := context.WithValue(ctx, crawlerIdKey{}, i)
 					crawlCtx, cancel := context.WithTimeout(crawlCtx, o.crawlTimeout)
 					// this could hang if the processed channel is full
-					processed <- c.Crawl(crawlCtx, url)
+					processed <- *c.Crawl(crawlCtx, url)
 					cancel()
 				}
 			}
@@ -83,16 +84,13 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseS
 			case <-ctx.Done():
 				return ctx.Err()
 			case res := <-processed:
-				status := "completed"
 				if res.Err != nil {
-					slog.ErrorCtx(ctx, "failed to crawl", "error", res.Err)
-					status = string(res.Err.Status())
+					slog.ErrorContext(ctx, "failed to crawl", "domain", res.Domain, "error", res.Err)
 				}
 				// send the peer to the results channel
-				results <- models.ServerFromCrawlResult(res.Domain, res.Nodeinfo, res.Peers, res.Err, status)
+				results <- crawler.CrawlFromResult(res)
 
 				// mark the peer as crawled
-				// TODO: maybe handle temporary errors differently (e.g. don't mark them as crawled)
 				o.crawledDomains[res.Domain] = struct{}{}
 
 				// parallelized because otherwise
@@ -103,12 +101,12 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.FediverseS
 					g.Go(func() error {
 						// check if the peer was already this session
 						if o.wasCrawled(peer) {
-							slog.InfoCtx(ctx, "peer was already crawled", "peer", peer)
+							slog.InfoContext(ctx, "peer was already crawled", "peer", peer)
 							return nil
 						}
 
 						if o.isBlocked(peer) {
-							slog.InfoCtx(ctx, "peer is blocked", "peer", peer)
+							slog.InfoContext(ctx, "peer is blocked", "peer", peer)
 							return nil
 						}
 

@@ -4,8 +4,12 @@ func (n *Nodeinfo) SchemaVersion() string {
 	return "2.0"
 }
 
-func (n *Nodeinfo) GetSoftwareName() string {
-	return n.Software.Name
+func (n *Nodeinfo) SoftwareName() string {
+	return string(n.Software.Name)
+}
+
+func (n *Nodeinfo) SoftwareVersion() string {
+	return n.Software.Version
 }
 
 func (n *Nodeinfo) IsRegistrationOpen() bool {

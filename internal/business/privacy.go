@@ -1,5 +1,5 @@
 package business
 
 const (
-	smallServerThreshold = 10
+	smallServerThreshold = 2
 )

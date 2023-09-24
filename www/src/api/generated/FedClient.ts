@@ -18,7 +18,7 @@ export class FedClient {
 
     constructor(config?: Partial<OpenAPIConfig>, HttpRequest: HttpRequestConstructor = FetchHttpRequest) {
         this.request = new HttpRequest({
-            BASE: config?.BASE ?? 'https://petstore.swagger.io/v2',
+            BASE: config?.BASE ?? '',
             VERSION: config?.VERSION ?? '0.1.0',
             WITH_CREDENTIALS: config?.WITH_CREDENTIALS ?? false,
             CREDENTIALS: config?.CREDENTIALS ?? 'include',
