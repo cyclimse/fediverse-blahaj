@@ -1,7 +1,10 @@
 package business
 
+//go:generate go run github.com/sqlc-dev/sqlc/cmd/sqlc generate -f ../../sqlc.yaml 
+
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"log/slog"
@@ -10,6 +13,15 @@ import (
 	"github.com/cyclimse/fediverse-blahaj/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var (
+	initialSeedDomains = []string{
+		"mastodon.social",
+		"mastodon.online",
+		"mastodon.xyz",
+		"mastodon.art",
+	}
 )
 
 func New(conn *pgxpool.Pool) *Business {
@@ -79,4 +91,26 @@ func (b *Business) Run(ctx context.Context, crawls chan models.Crawl) error {
 			}
 		}
 	}
+}
+
+func (b *Business) GetCrawlerSeedDomains(ctx context.Context, count int) ([]string, error) {
+	domains, err := b.queries.GetCrawlerSeedDomains(ctx, int32(count))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(domains) == 0 {
+		domains = append(domains, initialSeedDomains...)
+		return domains, nil
+	}
+
+	// For now until we have a better way to handle this
+	// We shuffle to make it more random
+
+	// (no need to seed in go1.20+)
+	rand.Shuffle(len(domains), func(i, j int) {
+		domains[i], domains[j] = domains[j], domains[i]
+	})
+
+	return domains, nil
 }

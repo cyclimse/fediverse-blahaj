@@ -1,5 +1,7 @@
 package controller
 
+//go:generate go run github.com/deepmap/oapi-codegen/cmd/oapi-codegen -package v1 -generate "types,server,strict-server,spec" -o ../v1/openapi.gen.go ../../../api/v1/openapi.yaml
+
 import (
 	"errors"
 	"net/http"

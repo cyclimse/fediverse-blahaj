@@ -1,9 +1,11 @@
 version: "2"
 sql:
 - engine: "postgresql"
-  queries: "db/query.sql"
+  queries:
+  - "db/sql/queries.sql"
+  - "db/sql/mutations.sql"
   schema:
-  - "db/schema.sql"
+  - "db/sql/schema.sql"
   - "db/migrations"
   gen:
     go:

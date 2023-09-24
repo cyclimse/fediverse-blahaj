@@ -16,25 +16,24 @@ const (
 	startingCrawlCapacity = 100
 )
 
-func New(blockedDomains []string) *Orchestrator {
+func New(config OrchestratorConfig) *Orchestrator {
 	return &Orchestrator{
-		numCrawlers:    2,
-		seedDomain:     "mastodon.social",
 		crawledDomains: make(map[string]struct{}),
-		blockedDomains: blockedDomains,
-		crawlTimeout:   10 * time.Second,
+		config:         config,
 	}
 }
 
+type OrchestratorConfig struct {
+	NumCrawlers      int
+	BlockedDomains   []string
+	SeedDomains      []string
+	CrawlTimeout     time.Duration
+	CrawlerUserAgent string
+}
+
 type Orchestrator struct {
-	numCrawlers    int
-	seedDomain     string
 	crawledDomains map[string]struct{}
-	// unlike crawledDomains, this is a list because we also need to match subdomains
-	// e.g blocking ngrok.io should also block a.ngrok.io
-	// TODO: maybe use a trie for this
-	blockedDomains []string
-	crawlTimeout   time.Duration
+	config         OrchestratorConfig
 }
 
 // crawlerIdKey is the key for the crawler id in the context.
@@ -43,10 +42,10 @@ type crawlerIdKey struct{}
 // Crawl crawls the fediverse and streams the results to the results channel.
 // It returns an error if the context is exceeded.
 func (o *Orchestrator) Crawl(ctx context.Context, results chan models.Crawl) error {
-	crawlers := make([]*crawler.Crawler, o.numCrawlers)
+	crawlers := make([]*crawler.Crawler, o.config.NumCrawlers)
 
-	for i := 0; i < o.numCrawlers; i++ {
-		crawlers[i] = crawler.New()
+	for i := 0; i < o.config.NumCrawlers; i++ {
+		crawlers[i] = crawler.New(o.config.CrawlerUserAgent)
 	}
 
 	// channels for the crawl
@@ -54,7 +53,9 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.Crawl) err
 	processed := make(chan crawler.CrawlResult, startingCrawlCapacity)
 
 	// start the crawl
-	requested <- o.seedDomain
+	for _, domain := range o.config.SeedDomains {
+		requested <- domain
+	}
 
 	for i := range crawlers {
 		c := crawlers[i]
@@ -66,7 +67,7 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.Crawl) err
 					return
 				case url := <-requested:
 					crawlCtx := context.WithValue(ctx, crawlerIdKey{}, i)
-					crawlCtx, cancel := context.WithTimeout(crawlCtx, o.crawlTimeout)
+					crawlCtx, cancel := context.WithTimeout(crawlCtx, o.config.CrawlTimeout)
 					// this could hang if the processed channel is full
 					processed <- *c.Crawl(crawlCtx, url)
 					cancel()
@@ -141,7 +142,7 @@ func (o *Orchestrator) wasCrawled(domain string) bool {
 func (o *Orchestrator) isBlocked(domain string) bool {
 	// we need to block domains and subdomains
 	// e.g. blocking ngrok.io should also block a.ngrok.io
-	for _, blockedDomain := range o.blockedDomains {
+	for _, blockedDomain := range o.config.BlockedDomains {
 		if domain == blockedDomain {
 			return true
 		}

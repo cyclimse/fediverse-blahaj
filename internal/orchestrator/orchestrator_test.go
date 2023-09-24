@@ -35,8 +35,10 @@ func TestOrchestrator_isBlocked(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.domain, func(t *testing.T) {
-			o := &Orchestrator{
-				blockedDomains: blockedDomains,
+			o := Orchestrator{
+				config: OrchestratorConfig{
+					BlockedDomains: blockedDomains,
+				},
 			}
 			got := o.isBlocked(tt.domain)
 			assert.Equal(t, tt.want, got)

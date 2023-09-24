@@ -21,10 +21,10 @@ import (
 	"github.com/temoto/robotstxt"
 )
 
-func New() *Crawler {
+func New(userAgent string) *Crawler {
 	return &Crawler{
 		client:    retryablehttp.NewClient(),
-		userAgent: "fediverse-blahaj/0.0.1",
+		userAgent: userAgent,
 	}
 }
 

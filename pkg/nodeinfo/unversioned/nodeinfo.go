@@ -1,5 +1,10 @@
 package unversioned
 
+//go:generate go run github.com/atombender/go-jsonschema/cmd/gojsonschema -p github.com/cyclimse/fediverse-blahaj/pkg/nodeinfo/v10 --resolve-extension schema.json -o ../v10/schema.go ../v10/nodeinfo.schema.json
+//go:generate go run github.com/atombender/go-jsonschema/cmd/gojsonschema -p github.com/cyclimse/fediverse-blahaj/pkg/nodeinfo/v11 --resolve-extension schema.json -o ../v11/schema.go ../v11/nodeinfo.schema.json
+//go:generate go run github.com/atombender/go-jsonschema/cmd/gojsonschema -p github.com/cyclimse/fediverse-blahaj/pkg/nodeinfo/v20 --resolve-extension schema.json -o ../v20/schema.go ../v20/nodeinfo.schema.json
+//go:generate go run github.com/atombender/go-jsonschema/cmd/gojsonschema -p github.com/cyclimse/fediverse-blahaj/pkg/nodeinfo/v21 --resolve-extension schema.json -o ../v21/schema.go ../v21/nodeinfo.schema.json
+
 import (
 	"fmt"
 
