@@ -27,7 +27,7 @@ type CrawlCmd struct {
 	Duration     time.Duration `help:"Duration of the crawl." default:"5m" env:"CRAWL_DURATION"`
 	CrawlerCount int           `help:"Number of crawlers." default:"2" env:"CRAWLER_COUNT"`
 
-	EntryPointServerPort int `help:"Port to listen on for the entry point server." default:"8080" env:"PORT"`
+	EntryPointServerPort int `help:"Port to listen on for the entry point server." default:"8081" env:"PORT"`
 }
 
 func (cmd *CrawlCmd) Run(cmdContext *Context) error {
@@ -53,7 +53,7 @@ func (cmd *CrawlCmd) RunCrawl(cmdContext *Context) error {
 
 	b := business.New(dbpool)
 
-	seeds, err := b.GetCrawlerSeedDomains(cmdContext.Ctx, cmd.CrawlerCount)
+	seeds, err := b.GetCrawlerSeedDomains(cmdContext.Ctx, 50)
 	if err != nil {
 		return err
 	}
@@ -80,6 +80,9 @@ func (cmd *CrawlCmd) RunCrawl(cmdContext *Context) error {
 		// create a context with a timeout for the crawl
 		crawlCtx, cancel := context.WithTimeout(ctx, cmd.Duration)
 		defer cancel()
+
+		slog.InfoContext(crawlCtx, "starting crawl", "seeds", len(seeds), "crawlers", cmd.CrawlerCount)
+
 		err := o.Crawl(crawlCtx, results)
 		if err != nil && crawlCtx.Err() != nil {
 			// we do not want to return an error because
@@ -112,10 +115,34 @@ func (cmd *CrawlCmd) RunCrawl(cmdContext *Context) error {
 // It used in production because of the way Scaleway Serverless Containers work.
 func (cmd *CrawlCmd) RunEntryPointServer(cmdContext *Context) error {
 	e := echo.New()
+	e.HideBanner = true
 
 	atomicIsAlreadyCrawling := uint32(0)
+	crawlingCtx, cancel := context.WithCancel(cmdContext.Ctx)
+	defer cancel()
 
 	e.GET("/", func(c echo.Context) error {
+		switch atomic.LoadUint32(&atomicIsAlreadyCrawling) {
+		case 0:
+			return c.String(200, "Not crawling.")
+		default:
+			return c.String(200, "Crawling.")
+		}
+	})
+
+	e.POST("/stop", func(c echo.Context) error {
+		// check if we are already crawling
+		if atomic.LoadUint32(&atomicIsAlreadyCrawling) == 0 {
+			return c.String(200, "Not crawling, nothing to do.")
+		}
+
+		// cancel the context to stop the crawl
+		cancel()
+
+		return c.String(200, "Stopped crawling.")
+	})
+
+	e.POST("/", func(c echo.Context) error {
 		// check if we are already crawling
 		if atomic.LoadUint32(&atomicIsAlreadyCrawling) >= 1 {
 			return c.String(200, "Already crawling, nothing to do.")
@@ -126,9 +153,17 @@ func (cmd *CrawlCmd) RunEntryPointServer(cmdContext *Context) error {
 
 		// run the crawl
 		go func() {
-			// reset the flag when the crawl is finished
-			defer atomic.StoreUint32(&atomicIsAlreadyCrawling, 0)
+			defer func() {
+				// recover from panic
+				if r := recover(); r != nil {
+					slog.ErrorContext(cmdContext.Ctx, "panic", "panic", r)
+				}
+				// reset the flag when the crawl is finished
+				atomic.StoreUint32(&atomicIsAlreadyCrawling, 0)
+			}()
 
+			// Swap the context to allow cancelling the crawl
+			cmdContext.Ctx = crawlingCtx
 			err := cmd.RunCrawl(cmdContext)
 			if err != nil {
 				// TODO: add a Slack notification? Or some sort of AlertManager integration?

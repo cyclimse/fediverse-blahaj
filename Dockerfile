@@ -23,12 +23,20 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     go build -o bin/blahaj ./cmd/blahaj
 
-FROM alpine:3.18
+FROM alpine:3.18 as blahaj
 
 WORKDIR /app
 
 COPY --from=builder /code/bin/ .
 
+FROM blahaj as api
+
 EXPOSE 8080
 
-ENTRYPOINT ["/app/blahaj"]
+ENTRYPOINT ["/app/blahaj", "api"]
+
+FROM blahaj as crawler
+
+EXPOSE 8081
+
+ENTRYPOINT ["/app/blahaj", "crawl"]

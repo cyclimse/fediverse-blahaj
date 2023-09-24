@@ -25,8 +25,10 @@ const (
 // Shared between the API and the crawler.
 type Config struct {
 	Environment Environment `help:"Environment to run in." enum:"development,production" default:"development" env:"ENVIRONMENT"`
-	PgConn      string      `help:"Postgres connection string." env:"PG_CONN"`
 	LogLevel    LogLevel    `help:"Log level." enum:"debug,info,warn,error" default:"info" env:"LOG_LEVEL"`
+
+	// DB
+	PgConn string `help:"Postgres connection string." env:"PG_CONN"`
 
 	// API
 	FrontendURL string `help:"URL of the frontend." env:"FRONTEND_URL"`

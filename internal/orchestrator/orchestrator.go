@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	startingCrawlCapacity = 100
+	startingCrawlCapacity = 500
 )
 
 func New(config OrchestratorConfig) *Orchestrator {
@@ -107,7 +107,7 @@ func (o *Orchestrator) Crawl(ctx context.Context, results chan models.Crawl) err
 						}
 
 						if o.isBlocked(peer) {
-							slog.InfoContext(ctx, "peer is blocked", "peer", peer)
+							// slog.InfoContext(ctx, "peer is blocked", "peer", peer)
 							return nil
 						}
 

@@ -1,10 +1,11 @@
 package business
 
-//go:generate go run github.com/sqlc-dev/sqlc/cmd/sqlc generate -f ../../sqlc.yaml 
+//go:generate go run github.com/sqlc-dev/sqlc/cmd/sqlc generate -f ../../sqlc.yaml
 
 import (
 	"context"
 	"math/rand"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -94,14 +95,32 @@ func (b *Business) Run(ctx context.Context, crawls chan models.Crawl) error {
 }
 
 func (b *Business) GetCrawlerSeedDomains(ctx context.Context, count int) ([]string, error) {
-	domains, err := b.queries.GetCrawlerSeedDomains(ctx, int32(count))
-	if err != nil {
-		return nil, err
+	domains := make([]string, 0, count)
+
+	offset := 0
+
+	for len(domains) < count {
+		newDomains, err := b.queries.GetCrawlerSeedDomains(ctx, db.GetCrawlerSeedDomainsParams{
+			Offset: int32(offset),
+			Limit:  int32(count - len(domains)),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(newDomains) == 0 {
+			break
+		}
+
+		for _, domain := range newDomains {
+			if !isBlocked(domain) {
+				domains = append(domains, domain)
+			}
+		}
 	}
 
 	if len(domains) == 0 {
 		domains = append(domains, initialSeedDomains...)
-		return domains, nil
 	}
 
 	// For now until we have a better way to handle this
@@ -113,4 +132,21 @@ func (b *Business) GetCrawlerSeedDomains(ctx context.Context, count int) ([]stri
 	})
 
 	return domains, nil
+}
+
+// isBlocked returns true if the domain is blocked.
+func isBlocked(domain string) bool {
+	// we need to block domains and subdomains
+	// e.g. blocking ngrok.io should also block a.ngrok.io
+	for _, blockedDomain := range BlockedDomains {
+		if domain == blockedDomain {
+			return true
+		}
+
+		if strings.HasSuffix(domain, blockedDomain) {
+			return true
+		}
+	}
+
+	return false
 }

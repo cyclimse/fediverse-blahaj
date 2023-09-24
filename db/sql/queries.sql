@@ -63,4 +63,4 @@ UNION
   WHERE deleted_at IS NULL
   ORDER BY started_at ASC
 )
-LIMIT $1;
+LIMIT $1 OFFSET $2;
